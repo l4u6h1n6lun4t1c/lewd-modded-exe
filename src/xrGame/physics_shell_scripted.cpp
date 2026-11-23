@@ -92,8 +92,11 @@ float cphysics_shell_scripted::GetMass()
 }
 
 #pragma optimize("s",on)
+void lewd_engine_feature_add(LPCSTR name); // script_ini_file_script.cpp
+
 void cphysics_shell_scripted::script_register(lua_State* L)
 {
+	lewd_engine_feature_add("collision_filters"); // LEWD B1
 	module(L)
 	[
 		class_<cphysics_shell_scripted>("physics_shell")
@@ -137,6 +140,30 @@ void cphysics_shell_scripted::script_register(lua_State* L)
 		.def("get_scale", &cphysics_shell_scripted::GetScale)
 		.def("get_mass", &cphysics_shell_scripted::GetMass)
 		.def("set_dynamic_limits", &cphysics_shell_scripted::set_DynamicLimits)
+
+		// LEWD B1: collision filters (two-way, whole shell, persistent)
+		.def("set_ignore_static", &cphysics_shell_scripted::set_ignore_static)
+		.def("get_ignore_static", &cphysics_shell_scripted::get_ignore_static)
+		.def("set_dynamic_class", &cphysics_shell_scripted::set_dynamic_class)
+		.def("is_dynamic_class", &cphysics_shell_scripted::is_dynamic_class)
+		.def("set_ignore_dynamic", &cphysics_shell_scripted::set_ignore_dynamic)
+		.def("get_ignore_dynamic", &cphysics_shell_scripted::get_ignore_dynamic)
+		.def("set_ignore_character", &cphysics_shell_scripted::set_ignore_character)
+		.def("get_ignore_character", &cphysics_shell_scripted::get_ignore_character)
+		.def("set_small", &cphysics_shell_scripted::set_small)
+		.def("is_small", &cphysics_shell_scripted::is_small)
+		.def("set_ignore_small", &cphysics_shell_scripted::set_ignore_small)
+		.def("get_ignore_small", &cphysics_shell_scripted::get_ignore_small)
+		.def("set_ragdoll", &cphysics_shell_scripted::set_ragdoll)
+		.def("is_ragdoll", &cphysics_shell_scripted::is_ragdoll)
+		.def("set_ignore_ragdoll", &cphysics_shell_scripted::set_ignore_ragdoll)
+		.def("get_ignore_ragdoll", &cphysics_shell_scripted::get_ignore_ragdoll)
+		.def("set_animated_class", &cphysics_shell_scripted::set_animated_class)
+		.def("is_animated_class", &cphysics_shell_scripted::is_animated_class)
+		.def("set_ignore_animated", &cphysics_shell_scripted::set_ignore_animated)
+		.def("get_ignore_animated", &cphysics_shell_scripted::get_ignore_animated)
+		.def("get_collide_class_bits", &cphysics_shell_scripted::get_collide_class_bits)
+		.def("set_collide_class_bits", &cphysics_shell_scripted::set_collide_class_bits)
 	];
 }
 

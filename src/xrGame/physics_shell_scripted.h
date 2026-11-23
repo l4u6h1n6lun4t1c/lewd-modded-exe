@@ -54,5 +54,48 @@ public:
     void SetScale(float scale) { SetScale(Fvector().set(scale, scale, scale)); }
 	Fvector GetScale();
 	float GetMass();
+
+	// LEWD B1: collision filter class bits (CPHCollideValidator::ETypeFlags) from Lua.
+	// The bits live on the shell's CPHObject, so they cover every element of the shell,
+	// are read by every collision test (next physics step) and survive Deactivate/Activate
+	// (only the CPHObject constructor resets them). Every setter is two-way.
+	enum
+	{
+		lewd_cbNCStatic = 1 << 1,
+		lewd_cbClassDynamic = 1 << 2,
+		lewd_cbNCClassDynamic = 1 << 3,
+		lewd_cbNCClassCharacter = 1 << 5,
+		lewd_cbClassSmall = 1 << 6,
+		lewd_cbNCClassSmall = 1 << 7,
+		lewd_cbClassRagDoll = 1 << 8,
+		lewd_cbNCClassRagDoll = 1 << 9,
+		lewd_cbClassAnimated = 1 << 10,
+		lewd_cbNCClassAnimated = 1 << 11,
+	};
+	void set_cl_bit(u32 bit, bool v) { physics_impl().collide_class_bits().set(bit, v ? TRUE : FALSE); }
+	bool get_cl_bit(u32 bit) { return !!physics_impl().collide_class_bits().test(bit); }
+
+	void set_ignore_static(bool v) { set_cl_bit(lewd_cbNCStatic, v); }
+	bool get_ignore_static() { return get_cl_bit(lewd_cbNCStatic); }
+	void set_dynamic_class(bool v) { set_cl_bit(lewd_cbClassDynamic, v); }
+	bool is_dynamic_class() { return get_cl_bit(lewd_cbClassDynamic); }
+	void set_ignore_dynamic(bool v) { set_cl_bit(lewd_cbNCClassDynamic, v); }
+	bool get_ignore_dynamic() { return get_cl_bit(lewd_cbNCClassDynamic); }
+	void set_ignore_character(bool v) { set_cl_bit(lewd_cbNCClassCharacter, v); }
+	bool get_ignore_character() { return get_cl_bit(lewd_cbNCClassCharacter); }
+	void set_small(bool v) { set_cl_bit(lewd_cbClassSmall, v); }
+	bool is_small() { return get_cl_bit(lewd_cbClassSmall); }
+	void set_ignore_small(bool v) { set_cl_bit(lewd_cbNCClassSmall, v); }
+	bool get_ignore_small() { return get_cl_bit(lewd_cbNCClassSmall); }
+	void set_ragdoll(bool v) { set_cl_bit(lewd_cbClassRagDoll, v); }
+	bool is_ragdoll() { return get_cl_bit(lewd_cbClassRagDoll); }
+	void set_ignore_ragdoll(bool v) { set_cl_bit(lewd_cbNCClassRagDoll, v); }
+	bool get_ignore_ragdoll() { return get_cl_bit(lewd_cbNCClassRagDoll); }
+	void set_animated_class(bool v) { set_cl_bit(lewd_cbClassAnimated, v); }
+	bool is_animated_class() { return get_cl_bit(lewd_cbClassAnimated); }
+	void set_ignore_animated(bool v) { set_cl_bit(lewd_cbNCClassAnimated, v); }
+	bool get_ignore_animated() { return get_cl_bit(lewd_cbNCClassAnimated); }
+	u32 get_collide_class_bits() { return physics_impl().collide_class_bits().get(); }
+	void set_collide_class_bits(u32 bits) { physics_impl().collide_class_bits().assign(bits); }
 DECLARE_SCRIPT_REGISTER_FUNCTION
 };
