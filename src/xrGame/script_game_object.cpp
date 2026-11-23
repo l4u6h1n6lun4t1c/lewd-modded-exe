@@ -744,6 +744,124 @@ bool CScriptGameObject::is_bone_visible(u16 bone_id, bool bHud)
 	return !!k->LL_GetBoneVisible(bone_id);
 }
 
+// LEWD B3 ------------------------------------------------------------------------------------------
+// hud == false: the object's own visual. hud == true: the HUD model of this item while it is on the HUD,
+// or (called on the actor) of the actor's active item. Nothing is cached, so a HUD model reload or a
+// weapon switch can never leave a dangling pointer; overrides live inside the kinematics instance.
+static IKinematics* b3_kinematics(CGameObject& o, bool hud)
+{
+	if (!hud)
+		return o.Visual() ? o.Visual()->dcast_PKinematics() : nullptr;
+
+	CHudItem* itm = smart_cast<CHudItem*>(&o);
+	if (!itm)
+	{
+		CActor* act = smart_cast<CActor*>(&o);
+		if (act)
+			itm = smart_cast<CHudItem*>(act->inventory().ActiveItem());
+	}
+	if (!itm || !itm->HudItemData())
+		return nullptr;
+	return itm->HudItemData()->m_model;
+}
+
+static u16 b3_bone(CGameObject& o, IKinematics* k, u16 bone, LPCSTR bone_name, bool hud, LPCSTR fn)
+{
+	if (!k)
+	{
+		Msg("! [%s] %s (%d) has no %s kinematics", fn, o.cNameSect_str(), o.ID(), hud ? "HUD" : "skeleton");
+		return BI_NONE;
+	}
+	if (bone_name)
+		bone = k->LL_BoneID(bone_name);
+	if (bone == BI_NONE || bone >= k->LL_BoneCount())
+	{
+		if (bone_name)
+			Msg("! [%s] bone '%s' not found in %s (%d)%s", fn, bone_name, o.cNameSect_str(), o.ID(), hud ? " HUD" : "");
+		else
+			Msg("! [%s] bone id %d out of range in %s (%d)%s", fn, (int)bone, o.cNameSect_str(), o.ID(), hud ? " HUD" : "");
+		return BI_NONE;
+	}
+	if (bone >= 64)
+	{
+		Msg("! [%s] bone %d of %s (%d) is above the 64-bone mask", fn, (int)bone, o.cNameSect_str(), o.ID());
+		return BI_NONE;
+	}
+	return bone;
+}
+
+bool CScriptGameObject::set_bone_visible_now(LPCSTR bone, bool bVisibility, bool bRecursive, bool bHud)
+{
+	IKinematics* k = b3_kinematics(object(), bHud);
+	u16 id = b3_bone(object(), k, BI_NONE, bone, bHud, "set_bone_visible_now");
+	if (id == BI_NONE)
+		return false;
+	k->LL_SetBoneVisibleNow(id, bVisibility, bRecursive);
+	return true;
+}
+
+bool CScriptGameObject::set_bone_visible_now_id(u16 bone, bool bVisibility, bool bRecursive, bool bHud)
+{
+	IKinematics* k = b3_kinematics(object(), bHud);
+	u16 id = b3_bone(object(), k, bone, nullptr, bHud, "set_bone_visible_now");
+	if (id == BI_NONE)
+		return false;
+	k->LL_SetBoneVisibleNow(id, bVisibility, bRecursive);
+	return true;
+}
+
+bool CScriptGameObject::b3_set_bone_rotation(u16 bone, LPCSTR bone_name, const Fvector& hpb, bool local_space, bool bHud)
+{
+	LPCSTR fn = bHud ? "set_hud_bone_rotation" : "set_bone_rotation";
+	IKinematics* k = b3_kinematics(object(), bHud);
+	u16 id = b3_bone(object(), k, bone, bone_name, bHud, fn);
+	if (id == BI_NONE)
+		return false;
+	if (!k->LL_SetBoneRotation(id, hpb, local_space))
+	{
+		Msg("! [%s] invalid rotation for bone %d of %s (%d)", fn, (int)id, object().cNameSect_str(), object().ID());
+		return false;
+	}
+	return true;
+}
+
+bool CScriptGameObject::b3_reset_bone_rotation(u16 bone, LPCSTR bone_name, bool bHud)
+{
+	IKinematics* k = b3_kinematics(object(), bHud);
+	if (!k)
+		return false; // nothing to reset (HUD model gone): not an error
+	u16 id = b3_bone(object(), k, bone, bone_name, bHud, bHud ? "reset_hud_bone_rotation" : "reset_bone_rotation");
+	if (id == BI_NONE)
+		return false;
+	return k->LL_ResetBoneRotation(id);
+}
+
+// Returned through luabind's copy policy (a fresh Lua vector, nullptr = nil): a luabind::object built on the main
+// Lua state came back as nil when called from a coroutine (bench 2026-11-23; list_bones has the same problem there)
+const Fvector* CScriptGameObject::b3_get_bone_rotation(u16 bone, LPCSTR bone_name, bool bHud)
+{
+	static Fvector result;
+	IKinematics* k = b3_kinematics(object(), bHud);
+	if (k)
+	{
+		if (bone_name)
+			bone = k->LL_BoneID(bone_name);
+		bool local_space;
+		if (bone != BI_NONE && bone < k->LL_BoneCount() && k->LL_GetBoneRotation(bone, result, local_space))
+			return &result;
+	}
+	return nullptr;
+}
+
+bool CScriptGameObject::b3_clear_bone_rotations(bool bHud)
+{
+	IKinematics* k = b3_kinematics(object(), bHud);
+	if (!k)
+		return false;
+	k->LL_ClearBoneRotations();
+	return true;
+}
+
 // demonized: list all bones
 ::luabind::object CScriptGameObject::list_bones(bool bHud)
 {

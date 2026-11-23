@@ -35,11 +35,14 @@
 #include "sight_manager_space.h"
 #include "script_attachment_manager.h"
 #include "WeaponBinoculars.h"
+#include <luabind/copy_policy.hpp> // LEWD B3: get_bone_rotation returns a copied vector or nil
+void lewd_engine_feature_add(LPCSTR name); // script_ini_file_script.cpp
 
 using namespace luabind;
 
 class_<CScriptGameObject> script_register_game_object2(class_<CScriptGameObject> &&instance)
 {
+	lewd_engine_feature_add("lua_bone_rotation"); // LEWD B3
 	return std::move(instance)
 		.def("add_sound",
 		     SAFE_WRAP((u32 (CScriptGameObject::*)(LPCSTR, u32, ESoundTypes, u32, u32, u32))(&CScriptGameObject::add_sound)))
@@ -213,6 +216,34 @@ class_<CScriptGameObject> script_register_game_object2(class_<CScriptGameObject>
 
 		// demonized: list all bones
 		.def("list_bones", SAFE_WRAP(&CScriptGameObject::list_bones))
+
+		// LEWD B3: same-frame visibility + Lua bone rotation (check `if obj.set_bone_rotation then` for stock exes)
+		.def("set_bone_visible_now", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR, bool))(&CScriptGameObject::set_bone_visible_now)))
+		.def("set_bone_visible_now", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR, bool, bool))(&CScriptGameObject::set_bone_visible_now)))
+		.def("set_bone_visible_now", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR, bool, bool, bool))(&CScriptGameObject::set_bone_visible_now)))
+		.def("set_bone_visible_now", SAFE_WRAP((bool (CScriptGameObject::*)(u16, bool))(&CScriptGameObject::set_bone_visible_now_id)))
+		.def("set_bone_visible_now", SAFE_WRAP((bool (CScriptGameObject::*)(u16, bool, bool))(&CScriptGameObject::set_bone_visible_now_id)))
+		.def("set_bone_visible_now", SAFE_WRAP((bool (CScriptGameObject::*)(u16, bool, bool, bool))(&CScriptGameObject::set_bone_visible_now_id)))
+
+		.def("set_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR, const Fvector&))(&CScriptGameObject::set_bone_rotation)))
+		.def("set_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR, const Fvector&, bool))(&CScriptGameObject::set_bone_rotation)))
+		.def("set_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(u16, const Fvector&))(&CScriptGameObject::set_bone_rotation)))
+		.def("set_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(u16, const Fvector&, bool))(&CScriptGameObject::set_bone_rotation)))
+		.def("reset_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR))(&CScriptGameObject::reset_bone_rotation)))
+		.def("reset_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(u16))(&CScriptGameObject::reset_bone_rotation)))
+		.def("get_bone_rotation", SAFE_WRAP((const Fvector* (CScriptGameObject::*)(LPCSTR))(&CScriptGameObject::get_bone_rotation)), copy<result>())
+		.def("get_bone_rotation", SAFE_WRAP((const Fvector* (CScriptGameObject::*)(u16))(&CScriptGameObject::get_bone_rotation)), copy<result>())
+		.def("clear_bone_rotations", SAFE_WRAP((bool (CScriptGameObject::*)())(&CScriptGameObject::clear_bone_rotations)))
+
+		.def("set_hud_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR, const Fvector&))(&CScriptGameObject::set_hud_bone_rotation)))
+		.def("set_hud_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR, const Fvector&, bool))(&CScriptGameObject::set_hud_bone_rotation)))
+		.def("set_hud_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(u16, const Fvector&))(&CScriptGameObject::set_hud_bone_rotation)))
+		.def("set_hud_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(u16, const Fvector&, bool))(&CScriptGameObject::set_hud_bone_rotation)))
+		.def("reset_hud_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(LPCSTR))(&CScriptGameObject::reset_hud_bone_rotation)))
+		.def("reset_hud_bone_rotation", SAFE_WRAP((bool (CScriptGameObject::*)(u16))(&CScriptGameObject::reset_hud_bone_rotation)))
+		.def("get_hud_bone_rotation", SAFE_WRAP((const Fvector* (CScriptGameObject::*)(LPCSTR))(&CScriptGameObject::get_hud_bone_rotation)), copy<result>())
+		.def("get_hud_bone_rotation", SAFE_WRAP((const Fvector* (CScriptGameObject::*)(u16))(&CScriptGameObject::get_hud_bone_rotation)), copy<result>())
+		.def("clear_hud_bone_rotations", SAFE_WRAP((bool (CScriptGameObject::*)())(&CScriptGameObject::clear_hud_bone_rotations)))
 
 #ifdef CBULLETMANAGER_EX
 		.def("GetBulletCheckVisual", SAFE_WRAP(&CScriptGameObject::GetBulletCheckVisual))

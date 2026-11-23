@@ -433,6 +433,8 @@ void CKinematics::Copy(dxRender_Visual* P)
 	bone_map_P = pFrom->bone_map_P;
 	visimask = pFrom->visimask;
 	hidden_bones = pFrom->hidden_bones;
+	m_rot_override_mask = 0;
+	m_rot_overrides.clear();
 
 	IBoneInstances_Create();
 
@@ -457,6 +459,9 @@ void CKinematics::Spawn()
 	for (u32 i = 0; i < bones->size(); i++)
 		bone_instances[i].construct();
 	Update_Callback = NULL;
+	// LEWD B3: a pooled instance must not carry the previous owner's bone rotations
+	m_rot_override_mask = 0;
+	m_rot_overrides.clear();
 	CalculateBones_Invalidate();
 	// wallmarks
 	ClearWallmarks();
@@ -469,6 +474,10 @@ void CKinematics::Depart()
 	inherited::Depart();
 	// wallmarks
 	ClearWallmarks();
+
+	// LEWD B3: drop Lua bone rotations when the instance goes back to the pool
+	m_rot_override_mask = 0;
+	m_rot_overrides.clear();
 
 	// unmask all bones
 	hidden_bones.zero();
@@ -536,6 +545,117 @@ void CKinematics::LL_SetBoneVisible(u16 bone_id, BOOL val, BOOL bRecursive)
 			LL_SetBoneVisible((*C)->GetSelfID(), val, bRecursive);
 	}
 	Visibility_Invalidate();
+}
+
+// LEWD B3: visibility that takes effect this frame. LL_SetBoneVisible only flags the submesh list
+// (Visibility_Update runs inside the next CalculateBones) and, when showing, puts back the last hidden
+// pose and invalidates; a model whose bones were already calculated this frame (HUD item / hands after
+// player_hud::update, any object updated after the bone pass) keeps the old submesh list and pose until
+// the next frame. Here both are redone right away under the bone mutex.
+void CKinematics::LL_SetBoneVisibleNow(u16 bone_id, BOOL val, BOOL bRecursive)
+{
+	if (bone_id >= LL_BoneCount())
+		return;
+	xrCriticalSectionGuard guard(&UCalc_Mutex);
+	LL_SetBoneVisible(bone_id, val, bRecursive);
+	// Visibility_Update re-flags itself when it moved a submesh (swap-and-pop skips one entry)
+	for (u32 i = 0; Update_Visibility && i <= children.size() + children_invisible.size(); ++i)
+		Visibility_Update();
+	CalculateBones_Invalidate();
+	CalculateBones(TRUE);
+}
+
+void CKinematics::ApplyBoneRotOverride(u16 bone_id, CBoneInstance& bi)
+{
+	for (const SBoneRotOverride& o : m_rot_overrides)
+	{
+		if (o.bone_id != bone_id)
+			continue;
+		if (o.local_space)
+		{
+			// rotate around the bone's own axes at its origin
+			bi.mTransform.mulB_43(o.rot);
+		}
+		else
+		{
+			// rotate the bone's basis around model-space axes, keep its origin
+			Fvector c = bi.mTransform.c;
+			Fmatrix basis = bi.mTransform;
+			basis.c.set(0.f, 0.f, 0.f);
+			bi.mTransform.mul_43(o.rot, basis);
+			bi.mTransform.c = c;
+		}
+		return;
+	}
+}
+
+bool CKinematics::LL_SetBoneRotation(u16 bone_id, const Fvector& hpb, bool local_space)
+{
+	if (bone_id >= LL_BoneCount() || bone_id >= 64 || !_valid(hpb))
+		return false;
+	xrCriticalSectionGuard guard(&UCalc_Mutex);
+	xrCriticalSectionGuard guard2(&UCalc_Mutex2); // monolith: Bone_Calculate / Bone_GetAnimPos run CLBone under UCalc_Mutex2 (lock order Mutex -> Mutex2 as in CalculateBones)
+	SBoneRotOverride* slot = nullptr;
+	for (SBoneRotOverride& o : m_rot_overrides)
+		if (o.bone_id == bone_id) { slot = &o; break; }
+	if (!slot)
+	{
+		m_rot_overrides.push_back(SBoneRotOverride());
+		slot = &m_rot_overrides.back();
+		slot->bone_id = bone_id;
+	}
+	slot->local_space = local_space;
+	slot->hpb = hpb;
+	slot->rot.setHPB(hpb.x, hpb.y, hpb.z);
+	m_rot_override_mask |= (u64(1) << bone_id);
+	CalculateBones_Invalidate();
+	return true;
+}
+
+bool CKinematics::LL_ResetBoneRotation(u16 bone_id)
+{
+	if (bone_id >= 64)
+		return false;
+	xrCriticalSectionGuard guard(&UCalc_Mutex);
+	xrCriticalSectionGuard guard2(&UCalc_Mutex2); // monolith: Bone_Calculate / Bone_GetAnimPos run CLBone under UCalc_Mutex2 (lock order Mutex -> Mutex2 as in CalculateBones)
+	for (auto it = m_rot_overrides.begin(); it != m_rot_overrides.end(); ++it)
+	{
+		if (it->bone_id != bone_id)
+			continue;
+		m_rot_overrides.erase(it);
+		m_rot_override_mask &= ~(u64(1) << bone_id);
+		CalculateBones_Invalidate();
+		return true;
+	}
+	return false;
+}
+
+void CKinematics::LL_ClearBoneRotations()
+{
+	xrCriticalSectionGuard guard(&UCalc_Mutex);
+	xrCriticalSectionGuard guard2(&UCalc_Mutex2); // monolith: Bone_Calculate / Bone_GetAnimPos run CLBone under UCalc_Mutex2 (lock order Mutex -> Mutex2 as in CalculateBones)
+	if (m_rot_overrides.empty())
+		return;
+	m_rot_overrides.clear();
+	m_rot_override_mask = 0;
+	CalculateBones_Invalidate();
+}
+
+bool CKinematics::LL_GetBoneRotation(u16 bone_id, Fvector& hpb, bool& local_space)
+{
+	if (bone_id >= 64 || !(m_rot_override_mask & (u64(1) << bone_id)))
+		return false;
+	xrCriticalSectionGuard guard(&UCalc_Mutex);
+	for (const SBoneRotOverride& o : m_rot_overrides)
+	{
+		if (o.bone_id == bone_id)
+		{
+			hpb = o.hpb;
+			local_space = o.local_space;
+			return true;
+		}
+	}
+	return false;
 }
 
 void CKinematics::LL_SetBonesVisible(u64 mask)

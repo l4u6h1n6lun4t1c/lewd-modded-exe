@@ -1163,6 +1163,41 @@ public:
 	void set_bone_visible(LPCSTR bone_name, bool bVisibility, bool bRecursive, bool bHud) { set_bone_visible(bone_id(bone_name, bHud), bVisibility, bRecursive, bHud); }
 	void set_bone_visible(LPCSTR bone_name, bool bVisibility, bool bRecursive) { set_bone_visible(bone_id(bone_name), bVisibility, bRecursive, false); }
 
+	// LEWD B3: same-frame visibility and Lua bone rotation on any object / the held item's HUD model.
+	// Bones are given by name or id; bad bones log a warning and return false. hud = the HUD model of this
+	// item (when it is on the HUD) or, called on the actor, of the actor's active item.
+	bool set_bone_visible_now(LPCSTR bone, bool bVisibility, bool bRecursive, bool bHud);
+	bool set_bone_visible_now(LPCSTR bone, bool bVisibility, bool bRecursive) { return set_bone_visible_now(bone, bVisibility, bRecursive, false); }
+	bool set_bone_visible_now(LPCSTR bone, bool bVisibility) { return set_bone_visible_now(bone, bVisibility, false, false); }
+	bool set_bone_visible_now_id(u16 bone, bool bVisibility, bool bRecursive, bool bHud);
+	bool set_bone_visible_now_id(u16 bone, bool bVisibility, bool bRecursive) { return set_bone_visible_now_id(bone, bVisibility, bRecursive, false); }
+	bool set_bone_visible_now_id(u16 bone, bool bVisibility) { return set_bone_visible_now_id(bone, bVisibility, false, false); }
+
+	bool b3_set_bone_rotation(u16 bone, LPCSTR bone_name, const Fvector& hpb, bool local_space, bool bHud);
+	bool b3_reset_bone_rotation(u16 bone, LPCSTR bone_name, bool bHud);
+	const Fvector* b3_get_bone_rotation(u16 bone, LPCSTR bone_name, bool bHud); // nullptr -> nil (copy policy)
+	bool b3_clear_bone_rotations(bool bHud);
+
+	bool set_bone_rotation(LPCSTR bone, const Fvector& hpb, bool local_space) { return b3_set_bone_rotation(BI_NONE, bone, hpb, local_space, false); }
+	bool set_bone_rotation(LPCSTR bone, const Fvector& hpb) { return b3_set_bone_rotation(BI_NONE, bone, hpb, true, false); }
+	bool set_bone_rotation(u16 bone, const Fvector& hpb, bool local_space) { return b3_set_bone_rotation(bone, nullptr, hpb, local_space, false); }
+	bool set_bone_rotation(u16 bone, const Fvector& hpb) { return b3_set_bone_rotation(bone, nullptr, hpb, true, false); }
+	bool reset_bone_rotation(LPCSTR bone) { return b3_reset_bone_rotation(BI_NONE, bone, false); }
+	bool reset_bone_rotation(u16 bone) { return b3_reset_bone_rotation(bone, nullptr, false); }
+	const Fvector* get_bone_rotation(LPCSTR bone) { return b3_get_bone_rotation(BI_NONE, bone, false); }
+	const Fvector* get_bone_rotation(u16 bone) { return b3_get_bone_rotation(bone, nullptr, false); }
+	bool clear_bone_rotations() { return b3_clear_bone_rotations(false); }
+
+	bool set_hud_bone_rotation(LPCSTR bone, const Fvector& hpb, bool local_space) { return b3_set_bone_rotation(BI_NONE, bone, hpb, local_space, true); }
+	bool set_hud_bone_rotation(LPCSTR bone, const Fvector& hpb) { return b3_set_bone_rotation(BI_NONE, bone, hpb, true, true); }
+	bool set_hud_bone_rotation(u16 bone, const Fvector& hpb, bool local_space) { return b3_set_bone_rotation(bone, nullptr, hpb, local_space, true); }
+	bool set_hud_bone_rotation(u16 bone, const Fvector& hpb) { return b3_set_bone_rotation(bone, nullptr, hpb, true, true); }
+	bool reset_hud_bone_rotation(LPCSTR bone) { return b3_reset_bone_rotation(BI_NONE, bone, true); }
+	bool reset_hud_bone_rotation(u16 bone) { return b3_reset_bone_rotation(bone, nullptr, true); }
+	const Fvector* get_hud_bone_rotation(LPCSTR bone) { return b3_get_bone_rotation(BI_NONE, bone, true); }
+	const Fvector* get_hud_bone_rotation(u16 bone) { return b3_get_bone_rotation(bone, nullptr, true); }
+	bool clear_hud_bone_rotations() { return b3_clear_bone_rotations(true); }
+
 	Fmatrix bone_transform(u16 bone_id, bool bHud, bool bPrev);
 	Fmatrix bone_transform(u16 bone_id, bool bHud) { return bone_transform(bone_id, bHud, false); }
 	Fmatrix bone_transform(u16 bone_id) { return bone_transform(bone_id, false, false); }

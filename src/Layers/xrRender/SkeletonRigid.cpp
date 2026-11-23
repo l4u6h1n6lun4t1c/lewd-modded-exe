@@ -224,6 +224,10 @@ void CKinematics::CLBone(const CBoneData* bd, CBoneInstance& bi, const Fmatrix* 
 	if (bi.callback())
 		bi.callback()(&bi);
 
+	// LEWD B3: Lua bone rotation, after animation and after the bone's own callback
+	if (m_rot_override_mask && (m_rot_override_mask & (u64(1) << bd->GetSelfID())))
+		ApplyBoneRotOverride(bd->GetSelfID(), bi);
+
 	bi.mRenderTransform.mul_43(bi.mTransform, bd->m2b_transform);
 }
 

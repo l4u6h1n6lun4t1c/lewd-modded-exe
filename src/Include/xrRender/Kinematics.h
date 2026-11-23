@@ -76,6 +76,14 @@ public:
 	virtual u64 _BCL LL_GetBonesVisible() = 0;
 	virtual void LL_SetBonesVisible(u64 mask) = 0;
 
+	// LEWD B3: visibility applied this frame (submesh list + bone recalculation), and
+	// per-bone rotation overrides applied after animation and bone callbacks (bone ids < 64)
+	virtual void LL_SetBoneVisibleNow(u16 bone_id, BOOL val, BOOL bRecursive) = 0;
+	virtual bool LL_SetBoneRotation(u16 bone_id, const Fvector& hpb, bool local_space) = 0;
+	virtual bool LL_ResetBoneRotation(u16 bone_id) = 0;
+	virtual void LL_ClearBoneRotations() = 0;
+	virtual bool LL_GetBoneRotation(u16 bone_id, Fvector& hpb, bool& local_space) = 0;
+
 	//--DSR-- SilencerOverheat_start
 	virtual IRenderVisual* GetVisualByBone(u16 bone_id) = 0;
 	virtual IRenderVisual* GetVisualByBone(LPCSTR bone_name) = 0;

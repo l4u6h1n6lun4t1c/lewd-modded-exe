@@ -150,6 +150,20 @@ protected:
 	Flags64 visimask;
 	Flags64 hidden_bones;
 
+	// LEWD B3: per-instance bone rotation overrides set from Lua, applied in CLBone after
+	// animation and after any bone callback (car wheels, stationary gun, physics, IK).
+	// Lives in this instance, so a visual change or the model pool hand-over drops it (Spawn/Depart clear it).
+	struct SBoneRotOverride
+	{
+		u16 bone_id;
+		bool local_space;
+		Fvector hpb;
+		Fmatrix rot;
+	};
+	u64 m_rot_override_mask = 0;
+	xr_vector<SBoneRotOverride> m_rot_overrides;
+	void ApplyBoneRotOverride(u16 bone_id, CBoneInstance& bi);
+
 	CSkeletonX* LL_GetChild(u32 idx);
 
 	// internal functions
@@ -277,6 +291,13 @@ public:
 	void LL_SetBoneVisible(u16 bone_id, BOOL val, BOOL bRecursive);
 	u64 _BCL LL_GetBonesVisible() { return visimask.get(); }
 	void LL_SetBonesVisible(u64 mask);
+
+	// LEWD B3
+	void LL_SetBoneVisibleNow(u16 bone_id, BOOL val, BOOL bRecursive);
+	bool LL_SetBoneRotation(u16 bone_id, const Fvector& hpb, bool local_space);
+	bool LL_ResetBoneRotation(u16 bone_id);
+	void LL_ClearBoneRotations();
+	bool LL_GetBoneRotation(u16 bone_id, Fvector& hpb, bool& local_space);
 
 	// Main functionality
 	virtual void CalculateBones(BOOL bForceExact = FALSE); // Recalculate skeleton
