@@ -11,8 +11,11 @@ Fmatrix global_transform(cphysics_element_scripted* E)
 	return m;
 }
 
+void lewd_engine_feature_add(LPCSTR name); // script_ini_file_script.cpp
+
 void cphysics_element_scripted::script_register(lua_State* L)
 {
+	lewd_engine_feature_add("mass_center"); // LEWD B6
 	module(L)
 	[
 		class_<cphysics_element_scripted>("physics_element")
@@ -33,5 +36,10 @@ void cphysics_element_scripted::script_register(lua_State* L)
 		.def("release_fixed", &cphysics_element_scripted::ReleaseFixed)
 		.def("is_fixed", &cphysics_element_scripted::isFixed)
 		.def("global_transform", &global_transform)
+		// LEWD B6
+		.def("set_mass_center", &cphysics_element_scripted::set_mass_center)
+		.def("get_mass_center", &cphysics_element_scripted::get_mass_center)
+		.def("get_mass_center_world", &cphysics_element_scripted::get_mass_center_world)
+		.def("set_mass", &cphysics_element_scripted::set_mass)
 	];
 }

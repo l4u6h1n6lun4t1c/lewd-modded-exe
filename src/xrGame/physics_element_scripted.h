@@ -32,5 +32,15 @@ public:
 	bool isFixed() { return physics_impl().isFixed(); }
 	void GetGlobalTransformDynamic(Fmatrix* m) const { physics_impl().GetGlobalTransformDynamic(m); }
 
+	// LEWD B6: live centre of mass (bone space) and mass
+	bool set_mass_center(const Fvector& local_mc) { return physics_impl().lewd_set_mass_center_live(local_mc); }
+	Fvector get_mass_center() { return physics_impl().local_mass_Center(); }
+	Fvector get_mass_center_world()
+	{
+		if (!physics_impl().isActive()) return Fvector().set(0.f, 0.f, 0.f);
+		return physics_impl().mass_Center();
+	}
+	void set_mass(float M) { physics_impl().lewd_set_mass_live(M); }
+
 DECLARE_SCRIPT_REGISTER_FUNCTION
 };

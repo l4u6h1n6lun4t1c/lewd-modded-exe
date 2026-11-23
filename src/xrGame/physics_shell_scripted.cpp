@@ -91,6 +91,52 @@ float cphysics_shell_scripted::GetMass()
     return physics_impl().getMass();
 }
 
+// LEWD B6 ------------------------------------------------------------------------------------
+bool cphysics_shell_scripted::set_mass_center(const Fvector& local_mc)
+{
+	if (!physics_impl().get_ElementsNumber()) return false;
+	return physics_impl().get_ElementByStoreOrder(0)->lewd_set_mass_center_live(local_mc);
+}
+
+Fvector cphysics_shell_scripted::get_mass_center()
+{
+	if (!physics_impl().get_ElementsNumber()) return Fvector().set(0.f, 0.f, 0.f);
+	return physics_impl().get_ElementByStoreOrder(0)->local_mass_Center();
+}
+
+// mass-weighted world centre of mass of all active elements
+Fvector cphysics_shell_scripted::get_mass_center_world()
+{
+	Fvector c;
+	c.set(0.f, 0.f, 0.f);
+	float m = 0.f;
+	const u16 n = physics_impl().get_ElementsNumber();
+	for (u16 i = 0; i < n; ++i)
+	{
+		CPhysicsElement* E = physics_impl().get_ElementByStoreOrder(i);
+		if (!E->isActive()) continue;
+		const float em = E->getMass();
+		c.mad(E->mass_Center(), em);
+		m += em;
+	}
+	if (m > 0.f) c.mul(1.f / m);
+	return c;
+}
+
+// scales every element so the shell totals M, keeping the mass ratios between elements
+void cphysics_shell_scripted::set_mass(float M)
+{
+	const float cur = physics_impl().getMass();
+	if (!_valid(M) || M <= 0.f || cur <= 0.f) return;
+	const float k = M / cur;
+	const u16 n = physics_impl().get_ElementsNumber();
+	for (u16 i = 0; i < n; ++i)
+	{
+		CPhysicsElement* E = physics_impl().get_ElementByStoreOrder(i);
+		E->lewd_set_mass_live(E->getMass() * k);
+	}
+}
+
 #pragma optimize("s",on)
 void lewd_engine_feature_add(LPCSTR name); // script_ini_file_script.cpp
 
@@ -164,6 +210,12 @@ void cphysics_shell_scripted::script_register(lua_State* L)
 		.def("get_ignore_animated", &cphysics_shell_scripted::get_ignore_animated)
 		.def("get_collide_class_bits", &cphysics_shell_scripted::get_collide_class_bits)
 		.def("set_collide_class_bits", &cphysics_shell_scripted::set_collide_class_bits)
+
+		// LEWD B6: centre of mass / mass
+		.def("set_mass_center", &cphysics_shell_scripted::set_mass_center)
+		.def("get_mass_center", &cphysics_shell_scripted::get_mass_center)
+		.def("get_mass_center_world", &cphysics_shell_scripted::get_mass_center_world)
+		.def("set_mass", &cphysics_shell_scripted::set_mass)
 	];
 }
 

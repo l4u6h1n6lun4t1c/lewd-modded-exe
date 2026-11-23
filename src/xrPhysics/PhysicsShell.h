@@ -203,6 +203,12 @@ public:
 	//	virtual			void						get_AngularVel							( Fvector& velocity )		const																					{ get_AngularVel( velocity ); }
 	virtual void get_Box(Fvector& sz, Fvector& c) const { return CPhysicsBase::get_Box(sz, c); }
 	////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+	// LEWD B6: live centre of mass / mass. local_mc is in the element's bone space (the frame
+	// local_mass_Center() uses). The body origin (= CoM in X-Ray) moves, the geoms and the joint
+	// anchors on that body are shifted the opposite way, so neither the visual nor the collision jumps.
+	virtual bool lewd_set_mass_center_live(const Fvector& local_mc) = 0;
+	// Scales the element's mass tensor to M (inertia shape and CoM kept), applied to the body at once.
+	virtual void lewd_set_mass_live(float M) = 0;
 	virtual ~CPhysicsElement()
 	{
 	};

@@ -96,6 +96,13 @@ public:
 	void set_ignore_animated(bool v) { set_cl_bit(lewd_cbNCClassAnimated, v); }
 	bool get_ignore_animated() { return get_cl_bit(lewd_cbNCClassAnimated); }
 	u32 get_collide_class_bits() { return physics_impl().collide_class_bits().get(); }
+
+	// LEWD B6: centre of mass of the root element (bone space of the root bone) and shell mass
+	// (get_mass is upstream's GetMass)
+	bool set_mass_center(const Fvector& local_mc);
+	Fvector get_mass_center();
+	Fvector get_mass_center_world();
+	void set_mass(float M);
 	void set_collide_class_bits(u32 bits) { physics_impl().collide_class_bits().assign(bits); }
 DECLARE_SCRIPT_REGISTER_FUNCTION
 };

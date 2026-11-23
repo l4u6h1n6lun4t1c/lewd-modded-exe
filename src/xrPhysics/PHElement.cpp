@@ -24,6 +24,7 @@
 #pragma warning(disable:4267)
 
 #include "../3rd party/ode/ode/src/collision_kernel.h"
+#include "../3rd party/ode/ode/src/joint.h" // LEWD B6: joint anchor fix-up on CoM shift
 
 
 #pragma warning(default:4267)
@@ -1840,3 +1841,135 @@ void	CPHElement::	dbg_draw_geometry( float scale, u32 color, Flags32 flags /*= F
 //	m_fratures_holder->m_fractures
 //	m_fratures_holder->Fracture()
 //}
+
+//////////////////////////////////////////////////////////////////////////////////////////////
+// LEWD B6: live centre of mass and mass.
+// X-Ray keeps the ODE body origin at the element's centre of mass (m_mass_center, bone space);
+// the geoms sit in the body frame at (geom centre - m_mass_center) and the element transform is
+// body pose * translate(-m_mass_center). Moving the CoM therefore means: move the body origin by
+// R*d in the world, re-place every geom from the new m_mass_center (same as ReInitDynamics does)
+// and shift every joint anchor stored relative to this body by -d, so nothing jumps.
+static void lewd_shift_body_in_joints(dBodyID b, const Fvector& d_local, const dReal* d_world)
+{
+	const int n = dBodyGetNumJoints(b);
+	for (int ji = 0; ji < n; ++ji)
+	{
+		dxJoint* j = dBodyGetJoint(b, ji);
+		if (!j) continue;
+		const bool first = (j->node[0].body == b);
+		dReal* anchor = 0;
+		switch (dJointGetType(j))
+		{
+		case dJointTypeBall:
+			{
+				dxJointBall* jj = (dxJointBall*)j;
+				anchor = first ? jj->anchor1 : jj->anchor2;
+			}
+			break;
+		case dJointTypeHinge:
+			{
+				dxJointHinge* jj = (dxJointHinge*)j;
+				anchor = first ? jj->anchor1 : jj->anchor2;
+			}
+			break;
+		case dJointTypeUniversal:
+			{
+				dxJointUniversal* jj = (dxJointUniversal*)j;
+				anchor = first ? jj->anchor1 : jj->anchor2;
+			}
+			break;
+		case dJointTypeHinge2:
+			{
+				dxJointHinge2* jj = (dxJointHinge2*)j;
+				anchor = first ? jj->anchor1 : jj->anchor2;
+			}
+			break;
+		case dJointTypeSlider:
+			{
+				// offset = R2^T (pos1 - pos2), or pos1 (world) with no second body
+				dxJointSlider* jj = (dxJointSlider*)j;
+				if (jj->node[1].body)
+				{
+					dVector3 v;
+					dMULTIPLY1_331(v, jj->node[1].body->R, d_world);
+					const dReal s = first ? 1.f : -1.f;
+					for (int k = 0; k < 3; ++k) jj->offset[k] += s * v[k];
+				}
+				else
+					for (int k = 0; k < 3; ++k) jj->offset[k] += d_world[k];
+			}
+			break;
+		case dJointTypeFixed:
+			{
+				// offset = R1^T (pos1 - pos2), or pos1 (world) with no second body
+				dxJointFixed* jj = (dxJointFixed*)j;
+				if (jj->node[1].body)
+				{
+					dVector3 v;
+					dMULTIPLY1_331(v, jj->node[0].body->R, d_world);
+					const dReal s = first ? 1.f : -1.f;
+					for (int k = 0; k < 3; ++k) jj->offset[k] += s * v[k];
+				}
+				else
+					for (int k = 0; k < 3; ++k) jj->offset[k] += d_world[k];
+			}
+			break;
+		default: // contact (rebuilt every step), amotor (no anchor), null
+			break;
+		}
+		if (anchor)
+		{
+			anchor[0] -= d_local.x;
+			anchor[1] -= d_local.y;
+			anchor[2] -= d_local.z;
+		}
+	}
+}
+
+bool CPHElement::lewd_set_mass_center_live(const Fvector& local_mc)
+{
+	if (!_valid(local_mc))
+		return false;
+	Fvector d;
+	d.sub(local_mc, m_mass_center);
+	if (fis_zero(d.square_magnitude()))
+		return true;
+
+	if (!isActive() || !m_body)
+	{
+		// not built: create()/build() place the body and the geoms from m_mass_center
+		m_mass_center.set(local_mc);
+		return true;
+	}
+
+	dVector3 dl = {d.x, d.y, d.z, 0.f};
+	dVector3 dw;
+	dMULTIPLY0_331(dw, dBodyGetRotation(m_body), dl);
+	const dReal* p = dBodyGetPosition(m_body);
+	dBodySetPosition(m_body, p[0] + dw[0], p[1] + dw[1], p[2] + dw[2]);
+
+	lewd_shift_body_in_joints(m_body, d, dw);
+
+	m_mass_center.set(local_mc);
+	GEOM_I i = m_geoms.begin(), e = m_geoms.end();
+	for (; i != e; ++i)
+		(*i)->set_build_position(m_mass_center);
+
+	FillInterpolation();
+	if (!m_flags.test(flFixed))
+	{
+		if (!dBodyIsEnabled(m_body)) dBodyEnable(m_body);
+		m_shell->EnableObject(0);
+	}
+	VERIFY(dBodyStateValide(m_body));
+	return true;
+}
+
+void CPHElement::lewd_set_mass_live(float M)
+{
+	if (!_valid(M) || M <= 0.f || m_mass.mass <= 0.f)
+		return;
+	dMassAdjust(&m_mass, M);
+	if (isActive() && m_body && !m_flags.test(flFixed))
+		dBodySetMass(m_body, &m_mass);
+}
