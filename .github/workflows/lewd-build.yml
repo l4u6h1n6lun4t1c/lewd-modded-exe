@@ -1,0 +1,230 @@
+# Builds the LEWD Modded Exes from the `lewd` branch (or any ref) and, if asked,
+# publishes a GitHub release with a manifest the LEWD MO2 plugin reads.
+# Build steps follow upstream's .github/workflows/msbuild.yml (themrdemonized/xray-monolith).
+
+name: LEWD build
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to build
+        default: lewd
+        type: string
+      release:
+        description: Publish a release
+        default: false
+        type: boolean
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        default: lewd
+      release:
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_URL: https://github.com/themrdemonized/xray-monolith.git
+  SOLUTION_FILE_PATH: src/engine-vs2022.sln
+  PACK_GAMEDATA_NAME: 00_modded_exes_gamedata.db0
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.v.outputs.sha }}
+      upstream_tag: ${{ steps.v.outputs.upstream_tag }}
+      upstream_int: ${{ steps.v.outputs.upstream_int }}
+      build: ${{ steps.v.outputs.build }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ inputs.ref }}
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Work out versions
+      id: v
+      env:
+        GH_TOKEN: ${{ github.token }}
+        RELEASE: ${{ inputs.release }}
+      run: |
+        set -euo pipefail
+        git fetch -q --no-tags "$UPSTREAM_URL" 'refs/tags/*:refs/tags/*'
+        sha=$(git rev-parse HEAD)
+        # Newest plain upstream release tag (YYYY.M.D) contained in this commit.
+        up=$(git tag --merged HEAD | grep -E '^[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}$' | sort -V | tail -1)
+        [ -n "$up" ] || { echo "No upstream release tag found under $sha"; exit 1; }
+        IFS=. read -r y m d <<<"$up"
+        upint=$(printf '%04d%02d%02d' "$y" "$m" "$d")
+        if [ "$RELEASE" = "true" ]; then
+          n=$(gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' \
+              | grep -E "^${up//./\\.}-lewd\.[0-9]+$" | sed 's/.*-lewd\.//' | sort -n | tail -1 || true)
+          build="$up-lewd.$(( ${n:-0} + 1 ))"
+        else
+          build="$up-lewd.dev-$(git rev-parse --short HEAD)"
+        fi
+        echo "Building $build from $sha (upstream $up)"
+        {
+          echo "sha=$sha"
+          echo "upstream_tag=$up"
+          echo "upstream_int=$upint"
+          echo "build=$build"
+        } >> "$GITHUB_OUTPUT"
+
+  pack_gamedata:
+    needs: prepare
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.prepare.outputs.sha }}
+        persist-credentials: false
+    - name: Pack gamedata
+      run: |
+        new-item -path "./compressor/gamedata" -itemtype directory -force
+        copy-item -path "./gamedata/*" -destination "./compressor/gamedata" -recurse -force
+        cd ./compressor
+        start-process -filepath "./! compress_gamedata.cmd" -Wait
+        rename-item -path gamedata.db0 -newname ${{ env.PACK_GAMEDATA_NAME }}
+    - uses: actions/upload-artifact@v4
+      with:
+        name: gamedata
+        path: ./compressor/${{ env.PACK_GAMEDATA_NAME }}
+        if-no-files-found: error
+        retention-days: 3
+
+  build:
+    needs: prepare
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        buildconf: ["DX11", "DX11-AVX"]
+    steps:
+    - name: Configure pagefile
+      uses: al-cheb/configure-pagefile-action@v1.3
+      with:
+        minimum-size: 8GB
+        maximum-size: 8GB
+        disk-root: "C:"
+
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.prepare.outputs.sha }}
+        submodules: recursive
+        persist-credentials: false
+
+    - uses: microsoft/setup-msbuild@v2
+      with:
+        msbuild-architecture: x64
+
+    - name: Write src/lewd_version.h
+      shell: bash
+      run: |
+        cat > src/lewd_version.h <<EOF
+        #pragma once
+        // Written by CI (lewd-build.yml)
+        #define LEWD_UPSTREAM_VERSION ${{ needs.prepare.outputs.upstream_int }}
+        #define LEWD_BUILD_STRING "${{ needs.prepare.outputs.build }}"
+        EOF
+        cat src/lewd_version.h
+
+    - name: Build ${{ matrix.buildconf }}
+      run: msbuild /p:Configuration=${{ matrix.buildconf }} ${{ env.SOLUTION_FILE_PATH }}
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: exe_${{ matrix.buildconf }}
+        path: ./_build/_game/bin_dbg/*.exe
+        if-no-files-found: error
+        retention-days: 3
+
+    - name: Zip PDB
+      working-directory: ./_build/_game/bin_dbg
+      run: compress-archive -DestinationPath "lewd-modded-exes_${{ matrix.buildconf }}_pdb.zip" -Path "./*.pdb"
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: pdb_${{ matrix.buildconf }}
+        path: ./_build/_game/bin_dbg/*.zip
+        if-no-files-found: error
+        retention-days: 3
+
+  package:
+    needs: [prepare, pack_gamedata, build]
+    runs-on: ubuntu-latest
+    env:
+      BUILD: ${{ needs.prepare.outputs.build }}
+      UPSTREAM_TAG: ${{ needs.prepare.outputs.upstream_tag }}
+      SHA: ${{ needs.prepare.outputs.sha }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: ${{ needs.prepare.outputs.sha }}
+        sparse-checkout: License.txt
+        sparse-checkout-cone-mode: false
+        persist-credentials: false
+        path: src
+
+    - uses: actions/download-artifact@v4
+      with:
+        path: art
+
+    - name: Assemble zip and manifest
+      run: |
+        set -euo pipefail
+        mkdir -p pkg/bin pkg/db/mods out
+        cp art/exe_*/*.exe pkg/bin/
+        cp art/gamedata/*.db0 pkg/db/mods/
+        cp src/License.txt pkg/
+        python3 - <<'EOF'
+        import hashlib, json, os, pathlib
+        pkg = pathlib.Path("pkg")
+        files = {}
+        for p in sorted(pkg.rglob("*")):
+            if p.is_file():
+                files[p.relative_to(pkg).as_posix()] = hashlib.sha256(p.read_bytes()).hexdigest()
+        manifest = {
+            "name": "LEWD Modded Exes",
+            "version": os.environ["BUILD"],
+            "upstream": "themrdemonized/xray-monolith",
+            "upstream_tag": os.environ["UPSTREAM_TAG"],
+            "commit": os.environ["SHA"],
+            "zip": f"lewd-modded-exes_{os.environ['BUILD']}.zip",
+            "files": files,
+            "min_plugin_version": "1.0.0",
+        }
+        (pkg / "lewd-exes.json").write_text(json.dumps(manifest, indent=2))
+        pathlib.Path("out/lewd-exes.json").write_text(json.dumps(manifest, indent=2))
+        print(json.dumps(manifest, indent=2))
+        EOF
+        (cd pkg && zip -qr "../out/lewd-modded-exes_${BUILD}.zip" .)
+        cp art/pdb_*/*.zip out/
+        ls -l out
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: package
+        path: out/*
+        retention-days: 14
+
+    - name: Publish release
+      if: inputs.release
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        cat > notes.md <<EOF
+        LEWD Modded Exes \`$BUILD\`: upstream [Modded Exes $UPSTREAM_TAG](https://github.com/themrdemonized/xray-monolith/releases/tag/$UPSTREAM_TAG) by themrdemonized and contributors, plus the LEWD patches on the \`lewd\` branch.
+
+        Install: unpack into your Anomaly folder as \`bin_lewd\` (exes) and an MO2 mod (\`db/mods\`), or let the LEWD MO2 plugin do it.
+
+        Patches since upstream: https://github.com/$GITHUB_REPOSITORY/compare/$UPSTREAM_TAG...$SHA
+        EOF
+        gh release create "$BUILD" out/* -R "$GITHUB_REPOSITORY" --target "$SHA" \
+          --title "LEWD Modded Exes $BUILD" --notes-file notes.md

@@ -1,0 +1,104 @@
+# Watches upstream Modded Exes releases. On a new one, rebases the `lewd`
+# branch onto it, then builds and publishes a LEWD release.
+# If our patches conflict, it opens an issue and players keep the last build.
+#
+# Needs a repo secret LEWD_PUSH_TOKEN: a fine-grained token for this repo with
+# Contents: read/write and Workflows: read/write. GitHub's own token cannot push
+# commits that touch .github/workflows, which upstream's history does.
+
+name: LEWD upstream sync
+
+on:
+  schedule:
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild and release even if upstream has no new release
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: lewd-sync
+
+env:
+  UPSTREAM_REPO: themrdemonized/xray-monolith
+  UPSTREAM_URL: https://github.com/themrdemonized/xray-monolith.git
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.rebase.outputs.changed }}
+      sha: ${{ steps.rebase.outputs.sha }}
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: lewd
+        fetch-depth: 0
+        token: ${{ secrets.LEWD_PUSH_TOKEN || github.token }}
+
+    - name: Rebase lewd onto the latest upstream release
+      id: rebase
+      env:
+        GH_TOKEN: ${{ github.token }}
+        FORCE: ${{ inputs.force || false }}
+      run: |
+        set -euo pipefail
+        git config user.name "lewd-sync[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        latest=$(gh api "repos/$UPSTREAM_REPO/releases/latest" --jq .tag_name)
+        git fetch -q --no-tags "$UPSTREAM_URL" 'refs/tags/*:refs/tags/*'
+        current=$(git tag --merged HEAD | grep -E '^[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}$' | sort -V | tail -1)
+        echo "Upstream latest: $latest, lewd is on: $current"
+
+        if [ "$latest" = "$current" ]; then
+          echo "changed=$FORCE" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "Nothing new upstream."
+          exit 0
+        fi
+
+        old=$(git rev-parse HEAD)
+        if ! git rebase "refs/tags/$latest"; then
+          files=$(git diff --name-only --diff-filter=U | sed 's/^/- `/; s/$/`/')
+          patch=$(git log -1 --format='%h %s' REBASE_HEAD 2>/dev/null || echo unknown)
+          git rebase --abort
+          title="Upstream $latest conflicts with the LEWD patches"
+          if ! gh issue list -R "$GITHUB_REPOSITORY" --state open --search "\"$title\" in:title" --json number --jq '.[].number' | grep -q .; then
+            printf '%s\n' \
+              "The sync could not rebase \`lewd\` onto upstream [$latest](https://github.com/$UPSTREAM_REPO/releases/tag/$latest)." \
+              "" \
+              "Stopped at patch: \`$patch\`" \
+              "" \
+              "Conflicting files:" \
+              "$files" \
+              "" \
+              "Players stay on the last LEWD release. Fix by rebasing \`lewd\` onto \`$latest\` by hand, force-push, then run *LEWD upstream sync* with force." \
+              > body.md
+            gh issue create -R "$GITHUB_REPOSITORY" --title "$title" --body-file body.md
+          fi
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        stamp=$(date -u +%Y%m%d-%H%M)
+        git tag "lewd-backup/$current-$stamp" "$old"
+        git push origin "refs/tags/$latest" "lewd-backup/$current-$stamp"
+        git push --force-with-lease="lewd:$old" origin HEAD:lewd
+        echo "changed=true" >> "$GITHUB_OUTPUT"
+        echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: sync
+    if: needs.sync.outputs.changed == 'true'
+    uses: ./.github/workflows/lewd-build.yml
+    with:
+      ref: ${{ needs.sync.outputs.sha }}
+      release: true
+    secrets: inherit
