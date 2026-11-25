@@ -13,6 +13,9 @@
 #include "script_engine.h"
 #include "ai_space.h"
 
+// LEWD: fork version info (src/lewd_version.h, written by CI)
+#include "../lewd_version.h"
+
 using namespace luabind;
 
 CScriptIniFile* get_system_ini()
@@ -103,6 +106,11 @@ CScriptIniFile* create_ini_file(LPCSTR ini_string)
 
 // demonized: get modded exes version
 int get_modded_exes_version() {
+	// LEWD: report the upstream release we are based on, not our build date,
+	// so mods that check the Modded Exes version see the real feature level.
+#if LEWD_UPSTREAM_VERSION
+	return LEWD_UPSTREAM_VERSION;
+#else
 	LPSTR month_id[12] =
 	{
 		"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
@@ -132,6 +140,7 @@ int get_modded_exes_version() {
 	// Convert the parsed date to the desired integer format
 	int result = years * 10000 + months * 100 + days;
 	return result;
+#endif
 }
 
 LPCSTR get_modded_exes_name() {
@@ -139,10 +148,16 @@ LPCSTR get_modded_exes_name() {
 	return result.c_str();
 }
 
+// LEWD: fork build string
+LPCSTR get_lewd_exes_version() {
+	return LEWD_BUILD_STRING;
+}
+
 // demonized: get modded exes version
 xr_string get_modded_exes_version_string() {
 	std::string s = std::to_string(get_modded_exes_version());
 	s.insert(4, 1, '.').insert(7, 1, '.');
+	s += " (LEWD " LEWD_BUILD_STRING ")";
 	return xr_string(s.c_str());
 }
 
@@ -234,6 +249,9 @@ void CScriptIniFile::script_register(lua_State* L)
 		// demonized: get modded exes version
 		def("get_modded_exes_version", &get_modded_exes_version),
 		def("get_modded_exes_name", &get_modded_exes_name),
+
+		// LEWD: fork build string, e.g. "2026.11.22-lewd.1". Absent on stock exes.
+		def("get_lewd_exes_version", &get_lewd_exes_version),
 
 		// demonized: get translation strings table
 		def("get_string_table", &get_string_table)
