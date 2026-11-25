@@ -32,6 +32,8 @@ The LEWD MO2 plugin does all of this and keeps it updated.
 Add a repository secret `LEWD_PUSH_TOKEN`: a fine-grained personal access token for this repository only, with **Contents: read and write** and **Workflows: read and write**.
 GitHub's built-in token can't push commits that touch `.github/workflows`, and upstream's history has such commits.
 
+Then run **LEWD bootstrap** once (Actions tab). It creates `lewd` from upstream's latest release plus the patches in `bootstrap/`. After that, `lewd` is the source of truth and `bootstrap/` is no longer used.
+
 ## License
 
 The engine code is GSC Game World code under the terms in `License.txt` on the `lewd` branch: free redistribution with the notice kept, no commercial use.

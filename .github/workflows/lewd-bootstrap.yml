@@ -1,0 +1,44 @@
+# One-time setup: creates the `lewd` branch from upstream's latest release
+# plus the patches in bootstrap/. Run it once after adding LEWD_PUSH_TOKEN.
+# It refuses to run if `lewd` already exists.
+
+name: LEWD bootstrap
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: themrdemonized/xray-monolith
+  UPSTREAM_URL: https://github.com/themrdemonized/xray-monolith.git
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        ref: main
+        fetch-depth: 1
+        token: ${{ secrets.LEWD_PUSH_TOKEN }}
+
+    - name: Create lewd from upstream + bootstrap patches
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        if git ls-remote --exit-code --heads origin lewd >/dev/null; then
+          echo "lewd already exists, nothing to do."; exit 0
+        fi
+        git config user.name "lewd-sync[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        latest=$(gh api "repos/$UPSTREAM_REPO/releases/latest" --jq .tag_name)
+        echo "Upstream latest release: $latest"
+        cp -r bootstrap "$RUNNER_TEMP/patches"
+        git fetch -q --no-tags "$UPSTREAM_URL" "refs/tags/$latest:refs/tags/$latest"
+        git checkout -q -b lewd "refs/tags/$latest"
+        git am --3way --keep-cr "$RUNNER_TEMP"/patches/*.patch
+        git log --oneline -3
+        git push origin lewd "refs/tags/$latest"

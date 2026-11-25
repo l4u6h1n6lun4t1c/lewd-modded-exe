@@ -1,0 +1,98 @@
+From 1e47d6ab3f1d157e15ca900289f6eb6fa86eeef7 Mon Sep 17 00:00:00 2001
+From: "LUN4T1C (via Claude)"
+ <331956861+l4u6h1n6lun4t1c@users.noreply.github.com>
+Date: Wed, 25 Nov 2026 05:49:05 +0000
+Subject: [PATCH] LEWD: fork version info
+
+Adds src/lewd_version.h (written by CI before each build). The exe now
+reports the upstream release it is based on through
+get_modded_exes_version(), adds "(LEWD <build>)" to the version line in
+the log, and exposes get_lewd_exes_version() to Lua so LEWD mods can tell
+our build from stock Modded Exes.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_011bnFBDiofbnZ4QWjKS2ehN
+---
+ src/lewd_version.h                             |  8 ++++++++
+ .../script_ini_file_script.cpp                 | 18 ++++++++++++++++++
+ 2 files changed, 26 insertions(+)
+ create mode 100644 src/lewd_version.h
+
+diff --git a/src/lewd_version.h b/src/lewd_version.h
+new file mode 100644
+index 00000000..464e9ad2
+--- /dev/null
++++ b/src/lewd_version.h
+@@ -0,0 +1,8 @@
++#pragma once
++
++// LEWD Modded Exes fork version info.
++// CI overwrites this file before each build (see the main branch workflows).
++// LEWD_UPSTREAM_VERSION: upstream release as YYYYMMDD, 0 = use the build date like upstream.
++// LEWD_BUILD_STRING: our release name, e.g. "2026.11.22-lewd.1".
++#define LEWD_UPSTREAM_VERSION 0
++#define LEWD_BUILD_STRING "dev"
+diff --git a/src/xrServerEntities/script_ini_file_script.cpp b/src/xrServerEntities/script_ini_file_script.cpp
+index 72d9acde..9dd0b12a 100644
+--- a/src/xrServerEntities/script_ini_file_script.cpp
++++ b/src/xrServerEntities/script_ini_file_script.cpp
+@@ -13,6 +13,9 @@
+ #include "script_engine.h"
+ #include "ai_space.h"
+ 
++// LEWD: fork version info (src/lewd_version.h, written by CI)
++#include "../lewd_version.h"
++
+ using namespace luabind;
+ 
+ CScriptIniFile* get_system_ini()
+@@ -103,6 +106,11 @@ CScriptIniFile* create_ini_file(LPCSTR ini_string)
+ 
+ // demonized: get modded exes version
+ int get_modded_exes_version() {
++	// LEWD: report the upstream release we are based on, not our build date,
++	// so mods that check the Modded Exes version see the real feature level.
++#if LEWD_UPSTREAM_VERSION
++	return LEWD_UPSTREAM_VERSION;
++#else
+ 	LPSTR month_id[12] =
+ 	{
+ 		"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+@@ -132,6 +140,7 @@ int get_modded_exes_version() {
+ 	// Convert the parsed date to the desired integer format
+ 	int result = years * 10000 + months * 100 + days;
+ 	return result;
++#endif
+ }
+ 
+ LPCSTR get_modded_exes_name() {
+@@ -139,10 +148,16 @@ LPCSTR get_modded_exes_name() {
+ 	return result.c_str();
+ }
+ 
++// LEWD: fork build string
++LPCSTR get_lewd_exes_version() {
++	return LEWD_BUILD_STRING;
++}
++
+ // demonized: get modded exes version
+ xr_string get_modded_exes_version_string() {
+ 	std::string s = std::to_string(get_modded_exes_version());
+ 	s.insert(4, 1, '.').insert(7, 1, '.');
++	s += " (LEWD " LEWD_BUILD_STRING ")";
+ 	return xr_string(s.c_str());
+ }
+ 
+@@ -235,6 +250,9 @@ void CScriptIniFile::script_register(lua_State* L)
+ 		def("get_modded_exes_version", &get_modded_exes_version),
+ 		def("get_modded_exes_name", &get_modded_exes_name),
+ 
++		// LEWD: fork build string, e.g. "2026.11.22-lewd.1". Absent on stock exes.
++		def("get_lewd_exes_version", &get_lewd_exes_version),
++
+ 		// demonized: get translation strings table
+ 		def("get_string_table", &get_string_table)
+ 	];
+-- 
+2.43.0
+
