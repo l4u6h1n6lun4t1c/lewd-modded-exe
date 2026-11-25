@@ -153,6 +153,33 @@ LPCSTR get_lewd_exes_version() {
 	return LEWD_BUILD_STRING;
 }
 
+// LEWD: engine feature flags. Each LEWD engine feature registers its own name (usually from its
+// script_register, so it is there before any mod script runs); lewd_engine_features() returns
+// them to Lua as a table { name = true, ... }. Empty by itself. Stock exes have no such global.
+static std::vector<std::string>& lewd_engine_feature_list()
+{
+	static std::vector<std::string> list;
+	return list;
+}
+
+void lewd_engine_feature_add(LPCSTR name)
+{
+	if (!name || !*name) return;
+	std::vector<std::string>& list = lewd_engine_feature_list();
+	for (const std::string& n : list)
+		if (n == name) return;
+	list.emplace_back(name);
+}
+
+// The table is built on the CALLER's lua_State (luabind passes it): a table made on the main state and
+// returned into a coroutine is pushed onto the wrong stack (the coroutine gets nil, the main stack an extra value).
+::luabind::object lewd_engine_features(lua_State* L) {
+	::luabind::object table = ::luabind::newtable(L);
+	for (const std::string& n : lewd_engine_feature_list())
+		table[n.c_str()] = true;
+	return table;
+}
+
 // demonized: get modded exes version
 xr_string get_modded_exes_version_string() {
 	std::string s = std::to_string(get_modded_exes_version());
@@ -252,6 +279,9 @@ void CScriptIniFile::script_register(lua_State* L)
 
 		// LEWD: fork build string, e.g. "2026.11.22-lewd.1". Absent on stock exes.
 		def("get_lewd_exes_version", &get_lewd_exes_version),
+
+		// LEWD: engine feature flags { name = true }, filled by each feature. Absent on stock exes.
+		def("lewd_engine_features", &lewd_engine_features, raw<1>()),
 
 		// demonized: get translation strings table
 		def("get_string_table", &get_string_table)
