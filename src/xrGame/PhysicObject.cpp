@@ -58,6 +58,7 @@ BOOL CPhysicObject::net_Spawn(CSE_Abstract* DC)
 	CPHSkeleton::Spawn(e);
 	setVisible(TRUE);
 	setEnabled(TRUE);
+	renderable.lewd_occl_fade = true; // LEWD B12: physic props may be left out of view by the camera occlusion fade
 
 	if (!PPhysicsShell()->isBreakable() && !CScriptBinder::object() && !CPHSkeleton::IsRemoving())
 		SheduleUnregister();

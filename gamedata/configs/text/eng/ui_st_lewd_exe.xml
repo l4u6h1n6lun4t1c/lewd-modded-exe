@@ -11,4 +11,10 @@
 	<string id="ui_st_lewd_exe_car_contact_cb_desc">
 		<text>Lets scripts get a callback when a vehicle hits something (callback.car_on_contact). Off: the script call does nothing.</text>
 	</string>
+	<string id="ui_st_lewd_exe_camera_cull">
+		<text>Vehicle camera hides trees in the way (lewd_camera_cull)</text>
+	</string>
+	<string id="ui_st_lewd_exe_camera_cull_desc">
+		<text>Lets vehicle scripts hide trees and props between the third-person camera and the vehicle. Only on your screen; collision and other players are not affected. Off: the script call does nothing.</text>
+	</string>
 </string_table>

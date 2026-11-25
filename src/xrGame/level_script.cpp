@@ -201,6 +201,76 @@ void set_weather_smooth(LPCSTR weather_name)
     
 }
 
+// LEWD B12 camera occlusion fade (xrEngine Render.h g_lewd_cam_occlusion): render-only, this client only.
+// Console toggle "lewd_camera_cull": 1 = works once a script enables it, 0 = the script API is a no-op.
+int g_lewd_camera_cull = 1;
+static u16 s_lewd_occl_target_id = u16(-1);
+void lewd_cam_occlusion_update();
+
+static void lewd_occl_set_radius(float radius)
+{
+	if (_valid(radius) && radius > 0.f) g_lewd_cam_occlusion.radius = radius;
+}
+
+void clear_camera_occlusion_fade()
+{
+	s_lewd_occl_target_id = u16(-1);
+	g_lewd_cam_occlusion.enabled = false;
+}
+
+void set_camera_occlusion_fade_id(bool enabled, u16 target_id, float radius)
+{
+	if (enabled && !g_lewd_camera_cull) { clear_camera_occlusion_fade(); return; }
+	lewd_occl_set_radius(radius);
+	s_lewd_occl_target_id = enabled ? target_id : u16(-1);
+	g_lewd_cam_occlusion.enabled = enabled;
+	lewd_cam_occlusion_update(); // place the target now, the frame update keeps it there
+}
+
+void set_camera_occlusion_fade_pos(bool enabled, const Fvector& target, float radius)
+{
+	if (enabled && !g_lewd_camera_cull) { clear_camera_occlusion_fade(); return; }
+	lewd_occl_set_radius(radius);
+	s_lewd_occl_target_id = u16(-1);
+	if (_valid(target)) g_lewd_cam_occlusion.target.set(target);
+	g_lewd_cam_occlusion.enabled = enabled && _valid(target);
+}
+
+bool get_camera_occlusion_fade() { return g_lewd_cam_occlusion.enabled; }
+
+// static_radius_max: also skip non-tree static meshes up to this sphere radius (0 = trees only);
+// dynamic: skip physic objects; target_clear: metres before the target that are never cleared
+void set_camera_occlusion_options(float static_radius_max, bool dynamic, float target_clear)
+{
+	g_lewd_cam_occlusion.static_radius_max = (_valid(static_radius_max) && static_radius_max > 0.f) ? static_radius_max : 0.f;
+	g_lewd_cam_occlusion.dynamic = dynamic;
+	g_lewd_cam_occlusion.target_clear = (_valid(target_clear) && target_clear > 0.f) ? target_clear : 0.f;
+}
+
+// called from CLevel::OnFrame: follows the target object (centre of its visual bounds)
+void lewd_cam_occlusion_update()
+{
+	if (!g_lewd_cam_occlusion.enabled)
+		return;
+	if (!g_lewd_camera_cull)
+	{
+		clear_camera_occlusion_fade(); // switched off at runtime
+		return;
+	}
+	if (s_lewd_occl_target_id == u16(-1))
+		return;
+	CObject* O = Level().Objects.net_Find(s_lewd_occl_target_id);
+	if (!O || O->getDestroy())
+	{
+		clear_camera_occlusion_fade();
+		return;
+	}
+	Fvector c = O->Position();
+	if (O->Visual())
+		O->XFORM().transform_tiny(c, O->Visual()->getVisData().sphere.P);
+	g_lewd_cam_occlusion.target.set(c);
+}
+
 bool set_weather_fx(LPCSTR weather_name)
 {
 #ifdef INGAME_EDITOR
@@ -2872,8 +2942,11 @@ bool get_arm_ik_enabled(u8 hand)
 	return table;
 }
 
+void lewd_engine_feature_add(LPCSTR name); // script_ini_file_script.cpp
+
 void CLevel::script_register(lua_State* L)
 {
+	lewd_engine_feature_add("camera_occlusion_fade"); // LEWD B12
 	module(L)
 		[
 			class_<CEnvDescriptor>("CEnvDescriptor")
@@ -3012,6 +3085,12 @@ void CLevel::script_register(lua_State* L)
 			def("get_weather", get_weather),
 			def("set_weather", set_weather),
 			def("set_weather_fx", set_weather_fx),
+			// LEWD B12
+			def("set_camera_occlusion_fade", &set_camera_occlusion_fade_id),
+			def("set_camera_occlusion_fade", &set_camera_occlusion_fade_pos),
+			def("clear_camera_occlusion_fade", &clear_camera_occlusion_fade),
+			def("get_camera_occlusion_fade", &get_camera_occlusion_fade),
+			def("set_camera_occlusion_options", &set_camera_occlusion_options),
 			def("start_weather_fx_from_time", start_weather_fx_from_time),
 			def("is_wfx_playing", is_wfx_playing),
 			def("get_wfx_time", get_wfx_time),

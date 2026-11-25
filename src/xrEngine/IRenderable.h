@@ -21,6 +21,8 @@ public:
 		BOOL pROS_Allowed;
 		// own values on shader bus obj_ lanes, null while it has none
 		ShaderBus::object_values* bus_values = nullptr;
+		// LEWD B12: may be left out of the main pass by the camera occlusion fade (set by physic objects)
+		bool lewd_occl_fade = false;
 	} renderable;
 
 public:

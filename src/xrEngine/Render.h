@@ -23,6 +23,27 @@ class ENGINE_API IRenderable;
 //class ENGINE_API CKinematics;
 struct ENGINE_API FSlideWindowItem;
 
+// LEWD B12 camera occlusion fade: render-only and local. While enabled, the main (non-shadow) pass of
+// the render graph leaves out trees, opt-in small static meshes and opted-in dynamic renderables whose
+// bounding sphere touches the capsule camera -> target. Collision, CDB, level data and net state are
+// untouched. Set from Lua: level.set_camera_occlusion_fade / level.clear_camera_occlusion_fade.
+struct SLewdCamOcclusion
+{
+	bool enabled = false;
+	Fvector target = {0.f, 0.f, 0.f}; // world point the camera looks at (vehicle centre), updated per frame
+	float radius = 1.25f;             // capsule radius, m
+	float static_radius_max = 0.f;    // non-tree static leaves with sphere radius <= this are skipped too (0 = trees only)
+	bool dynamic = true;              // skip dynamic renderables flagged renderable.lewd_occl_fade (physic objects)
+	float target_clear = 1.5f;        // the last metres before the target are kept, so ground right at the vehicle stays
+};
+extern ENGINE_API SLewdCamOcclusion g_lewd_cam_occlusion;
+// sphere (world) vs capsule Device.vCameraPosition -> g_lewd_cam_occlusion.target
+ENGINE_API bool lewd_cam_occlusion_hit(const Fvector& center, float r);
+// box (local, placed by xform; xform null = box is in world space) vs the same capsule, as the segment
+// against the box grown by the radius (slab test). Exact for the box, so a big object is only cut when
+// its box really crosses the line, not when its bounding sphere does.
+ENGINE_API bool lewd_cam_occlusion_hit_box(const Fbox& box, const Fmatrix* xform);
+
 // Igor
 class IRenderVisual;
 class IKinematics;

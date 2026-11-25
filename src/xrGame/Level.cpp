@@ -1009,6 +1009,12 @@ void CLevel::OnFrame()
 {
 	PROF_EVENT("CLevel::OnFrame()", PROF_CAT(GameLogic));
 
+	// LEWD B12: camera occlusion fade follows its target object
+	{
+		extern void lewd_cam_occlusion_update();
+		lewd_cam_occlusion_update();
+	}
+
 #ifdef DEBUG_MEMORY_MANAGER
     debug_memory_guard __guard__;
 #endif

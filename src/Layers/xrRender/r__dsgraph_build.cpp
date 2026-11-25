@@ -33,9 +33,43 @@ ICF float CalcSSA(float& distSQ, Fvector& C, float R)
 	return R / distSQ;
 }
 
+// LEWD B12 camera occlusion fade: main pass only (shadows stay), sphere-capsule test, no level change
+// Two steps: the cheap sphere-capsule test rejects almost everything, then the leaf's own box (world AABB
+// for statics, model-space box placed by the object's xform for dynamics) must really cross the line.
+// Per leaf, so a big model only loses the parts that are in the way.
+static IC bool lewd_occl_skip_static(const dxRender_Visual* v)
+{
+	const SLewdCamOcclusion& o = g_lewd_cam_occlusion;
+	const bool tree = (v->Type == MT_TREE_ST || v->Type == MT_TREE_PM);
+	if (!tree)
+	{
+		if (!(o.static_radius_max > 0.f && v->vis.sphere.R <= o.static_radius_max))
+			return false;
+		if (v->shader._get() && v->shader->E[0]._get() && v->shader->E[0]->flags.bLandscape)
+			return false; // terrain is never cut
+	}
+	if (!lewd_cam_occlusion_hit(v->vis.sphere.P, v->vis.sphere.R))
+		return false;
+	return lewd_cam_occlusion_hit_box(v->vis.box, nullptr);
+}
+
+static IC bool lewd_occl_skip_dynamic(IRenderable* O, const dxRender_Visual* v, const Fvector& center)
+{
+	const SLewdCamOcclusion& o = g_lewd_cam_occlusion;
+	if (!o.dynamic || !O || !O->renderable.lewd_occl_fade)
+		return false;
+	if (!lewd_cam_occlusion_hit(center, v->vis.sphere.R))
+		return false;
+	return lewd_cam_occlusion_hit_box(v->vis.box, &O->renderable.xform);
+}
+
 void R_dsgraph_structure::r_dsgraph_insert_dynamic(dxRender_Visual* pVisual, Fvector& Center)
 {
 	CRender& RI = RImplementation;
+
+	if (g_lewd_cam_occlusion.enabled && RI.phase == CRender::PHASE_NORMAL && !val_bHUD &&
+		lewd_occl_skip_dynamic(val_pObject, pVisual, Center))
+		return;
 
 #if RENDER != R_R4
 	if (RI.get_UI3D())
@@ -388,6 +422,9 @@ void R_dsgraph_structure::r_dsgraph_insert_dynamic(dxRender_Visual* pVisual, Fve
 void R_dsgraph_structure::r_dsgraph_insert_static(dxRender_Visual* pVisual)
 {
 	CRender& RI = RImplementation;
+
+	if (g_lewd_cam_occlusion.enabled && RI.phase == CRender::PHASE_NORMAL && lewd_occl_skip_static(pVisual))
+		return;
 
 	if (pVisual->vis.marker == RI.marker) return;
 	pVisual->vis.marker = RI.marker;

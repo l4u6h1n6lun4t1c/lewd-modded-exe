@@ -26,6 +26,8 @@
 TOGGLES = {
 	-- B2: 1 = car_on_contact works once a script enables it, 0 = set_contact_callback_enabled is a no-op
 	{ cmd = "lewd_car_contact_cb", def = 1, restart = false, feature = "car_contact", text = "ui_st_lewd_exe_car_contact_cb" },
+	-- B12: 1 = the vehicle camera may hide trees/props between camera and vehicle (this PC only), 0 = no-op
+	{ cmd = "lewd_camera_cull", def = 1, restart = false, feature = "camera_occlusion_fade", text = "ui_st_lewd_exe_camera_cull" },
 }
 
 local function cmd_exists(cmd)

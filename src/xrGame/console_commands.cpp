@@ -186,6 +186,7 @@ extern BOOL interruptFireOnAimToggle;
 
 extern BOOL mt_UpdateWeaponSounds;
 extern int g_lewd_car_contact_cb; // LEWD B2 (Car.cpp)
+extern int g_lewd_camera_cull; // LEWD B12 (level_script.cpp)
 
 extern BOOL alifeObjectHangingLampIgnoreMatchConfiguration;
 extern BOOL duplicate_story_id_crash;
@@ -3177,6 +3178,8 @@ void CCC_RegisterCommands()
 
 	// LEWD B2: 1 = car_on_contact works when a script enables it, 0 = the API is a no-op
 	CMD4(CCC_Integer, "lewd_car_contact_cb", &g_lewd_car_contact_cb, 0, 1);
+	// LEWD B12: 1 = camera occlusion fade works when a script enables it, 0 = the API is a no-op
+	CMD4(CCC_Integer, "lewd_camera_cull", &g_lewd_camera_cull, 0, 1);
 
 	CMD4(CCC_Integer, "spawn_antifreeze", &spawn_antifreeze, 0, 1);
 	CMD4(CCC_Integer, "spawn_antifreeze_debug", &spawn_antifreeze_debug, 0, 1);

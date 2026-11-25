@@ -100,6 +100,7 @@ BOOL CInventoryBox::net_Spawn(CSE_Abstract* DC)
 	setVisible(TRUE);
 	setEnabled(TRUE);
 	set_tip_text("inventory_box_use");
+	renderable.lewd_occl_fade = true; // LEWD B12: stash crates may be left out of view by the camera occlusion fade
 
 	CSE_ALifeInventoryBox* pSE_box = smart_cast<CSE_ALifeInventoryBox*>(DC);
 	if (/*IsGameTypeSingle() &&*/ pSE_box)
