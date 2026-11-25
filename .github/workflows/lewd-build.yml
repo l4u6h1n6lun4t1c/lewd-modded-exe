@@ -16,7 +16,7 @@ on:
         default: false
         type: boolean
       staging:
-        description: As a pre-release (staging). Only "Test builds" installs get it until you set it as latest.
+        description: To the private lewd-staging repo (testers only). Untick to publish straight to everyone.
         default: true
         type: boolean
   workflow_call:
@@ -35,6 +35,7 @@ permissions:
   contents: write
 
 env:
+  STAGING_REPO: l4u6h1n6lun4t1c/lewd-staging
   UPSTREAM_URL: https://github.com/themrdemonized/xray-monolith.git
   SOLUTION_FILE_PATH: src/engine-vs2022.sln
   PACK_GAMEDATA_NAME: 00_modded_exes_gamedata.db0
@@ -59,6 +60,7 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         RELEASE: ${{ inputs.release }}
+        STAGING_TOKEN: ${{ secrets.LEWD_PUSH_TOKEN }}
       run: |
         set -euo pipefail
         git fetch -q --no-tags "$UPSTREAM_URL" 'refs/tags/*:refs/tags/*'
@@ -69,8 +71,10 @@ jobs:
         IFS=. read -r y m d <<<"$up"
         upint=$(printf '%04d%02d%02d' "$y" "$m" "$d")
         if [ "$RELEASE" = "true" ]; then
-          n=$(gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' \
-              | grep -E "^${up//./\\.}-lewd\.[0-9]+$" | sed 's/.*-lewd\.//' | sort -n | tail -1 || true)
+          # Count builds in both the public repo and staging (tags exes-<build>), so numbers never repeat.
+          tags=$( { gh release list -R "$GITHUB_REPOSITORY" --limit 200 --json tagName --jq '.[].tagName' || true
+                    GH_TOKEN="$STAGING_TOKEN" gh release list -R "$STAGING_REPO" --limit 200 --json tagName --jq '.[].tagName' || true; } )
+          n=$(echo "$tags" | sed 's/^exes-//' | grep -E "^${up//./\\.}-lewd\.[0-9]+$" | sed 's/.*-lewd\.//' | sort -n | tail -1 || true)
           build="$up-lewd.$(( ${n:-0} + 1 ))"
         else
           build="$up-lewd.dev-$(git rev-parse --short HEAD)"
@@ -224,6 +228,7 @@ jobs:
       if: inputs.release
       env:
         GH_TOKEN: ${{ github.token }}
+        STAGING_TOKEN: ${{ secrets.LEWD_PUSH_TOKEN }}
         STAGING: ${{ inputs.staging }}
       run: |
         set -euo pipefail
@@ -235,10 +240,10 @@ jobs:
         Patches since upstream: https://github.com/$GITHUB_REPOSITORY/compare/$UPSTREAM_TAG...$SHA
         EOF
         if [ "$STAGING" = "true" ]; then
-          printf '\n**Staging build.** Only installs with "Test builds" on get it. To publish it to everyone, edit this release, untick "Set as a pre-release" and tick "Set as the latest release".\n' >> notes.md
-          flag=--prerelease
+          printf '\n**Test build.** Only testers with access to this repo get it. To publish it to everyone, run **LEWD promote** in lewd-modded-exe with version `%s`.\n' "$BUILD" >> notes.md
+          GH_TOKEN="$STAGING_TOKEN" gh release create "exes-$BUILD" out/* -R "$STAGING_REPO" \
+            --title "LEWD Modded Exes $BUILD (test)" --notes-file notes.md
         else
-          flag=--latest
+          gh release create "$BUILD" out/* -R "$GITHUB_REPOSITORY" --target "$SHA" --latest \
+            --title "LEWD Modded Exes $BUILD" --notes-file notes.md
         fi
-        gh release create "$BUILD" out/* -R "$GITHUB_REPOSITORY" --target "$SHA" $flag \
-          --title "LEWD Modded Exes $BUILD" --notes-file notes.md

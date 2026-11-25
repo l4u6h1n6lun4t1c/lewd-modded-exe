@@ -1,0 +1,54 @@
+# Publishes a tested build from the private lewd-staging repo to everyone:
+# copies the files of staging release exes-<version> into a public release <version> here,
+# marked as latest. The LEWD Addon Manager offers it to all players on their next MO2 start.
+
+name: LEWD promote
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to publish, e.g. 2026.11.22-lewd.2 (staging release exes-<version>)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  STAGING_REPO: l4u6h1n6lun4t1c/lewd-staging
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Copy the staging release to a public release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        STAGING_TOKEN: ${{ secrets.LEWD_PUSH_TOKEN }}
+        VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        [[ "$VERSION" =~ ^[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,2}-lewd\.[0-9]+$ ]] || { echo "Not a LEWD version: $VERSION"; exit 1; }
+        if gh release view "$VERSION" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          echo "$VERSION is already public."; exit 1
+        fi
+        mkdir out
+        GH_TOKEN="$STAGING_TOKEN" gh release download "exes-$VERSION" -R "$STAGING_REPO" -D out
+        ls -l out
+        python3 - <<'EOF'
+        import json, os
+        m = json.load(open("out/lewd-exes.json"))
+        assert m["version"] == os.environ["VERSION"], m["version"]
+        assert os.path.isfile(os.path.join("out", m["zip"])), m["zip"]
+        open(os.environ["GITHUB_ENV"], "a").write("SHA=%s\nUPSTREAM_TAG=%s\n" % (m["commit"], m["upstream_tag"]))
+        EOF
+        cat > notes.md <<EOF
+        LEWD Modded Exes \`$VERSION\`: upstream [Modded Exes $UPSTREAM_TAG](https://github.com/themrdemonized/xray-monolith/releases/tag/$UPSTREAM_TAG) by themrdemonized and contributors, plus the LEWD patches on the \`lewd\` branch.
+
+        Install: let the LEWD Addon Manager in MO2 do it (Tools > LEWD Addons > LEWD Modded Exes), or unpack the exes into \`<Anomaly>\\bin_lewd\` and \`db\` into an MO2 mod by hand.
+
+        Patches since upstream: https://github.com/$GITHUB_REPOSITORY/compare/$UPSTREAM_TAG...$SHA
+        EOF
+        gh release create "$VERSION" out/* -R "$GITHUB_REPOSITORY" --target "$SHA" --latest \
+          --title "LEWD Modded Exes $VERSION" --notes-file notes.md

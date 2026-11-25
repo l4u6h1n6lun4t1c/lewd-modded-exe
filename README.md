@@ -17,7 +17,7 @@ When upstream merges one, the next rebase drops our copy by itself.
 
 - **LEWD upstream sync** runs every 6 hours. When upstream publishes a new release, it rebases `lewd` onto it, builds and publishes `<upstream tag>-lewd.<n>`.
   If our patches conflict, it opens an issue instead, and players keep the previous build.
-- New builds go out as **pre-releases** (staging). Players' updaters ignore them; the LEWD Addon Manager with "Test builds" on installs them. After testing, edit the release: untick "Set as a pre-release", tick "Set as the latest release", and everyone gets it.
+- New builds go to the **private [lewd-staging](https://github.com/l4u6h1n6lun4t1c/lewd-staging) repo** first (release `exes-<version>`). Only testers with access get them, through the LEWD Addon Manager. After testing, run **LEWD promote** with the version: it copies the build to a public release here, and every player gets it on their next MO2 start.
 - **LEWD build** can be run by hand on any ref. With *release* ticked it publishes a release, for example after adding a patch to `lewd`.
 
 Each release has `lewd-modded-exes_<version>.zip` (`bin/` exes, `db/mods/` gamedata, license) and `lewd-exes.json` (version, upstream tag, SHA-256 of every file). The LEWD MO2 plugin reads the manifest.
@@ -30,7 +30,7 @@ The LEWD MO2 plugin does all of this and keeps it updated.
 
 ## Setup (once)
 
-Add a repository secret `LEWD_PUSH_TOKEN`: a fine-grained personal access token for this repository only, with **Contents: read and write** and **Workflows: read and write**.
+Add a repository secret `LEWD_PUSH_TOKEN`: a fine-grained personal access token for this repository, lewd-staging and lewd-addons, with **Contents: read and write** and **Workflows: read and write**.
 GitHub's built-in token can't push commits that touch `.github/workflows`, and upstream's history has such commits.
 
 Then run **LEWD bootstrap** once (Actions tab). It creates `lewd` from upstream's latest release plus the patches in `bootstrap/`. After that, `lewd` is the source of truth and `bootstrap/` is no longer used.
