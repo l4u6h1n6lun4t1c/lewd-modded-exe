@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="windows-1251"?>
+
+<string_table>
+	<!-- LEWD exe toggles (gamedata/scripts/lewd_exe_toggles.script), one pair per toggle: id and id_desc -->
+	<string id="ui_st_lewd_exe">
+		<text>Exe</text>
+	</string>
+</string_table>

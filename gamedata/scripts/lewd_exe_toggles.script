@@ -1,0 +1,92 @@
+--[[
+	lewd_exe_toggles.script - shared table of LEWD exe-side toggles (LEWD Modded Exes)
+
+	This is the data the "Exe" section of the one LEWD MCM entry reads. It holds no UI itself.
+	Every LEWD engine feature that has an exe switch adds ONE entry to TOGGLES below, in the same
+	commit as the feature. Entry fields:
+	  cmd      console command (CCC_Integer 0/1 unless type says otherwise)
+	  def      default value (number)
+	  restart  true when a change only takes effect after a game restart
+	  feature  lewd_engine_features() flag the switch belongs to
+	  text     string id of the label; the description is text .. "_desc"
+	           (gamedata/configs/text/<lang>/ui_st_lewd_exe.xml)
+
+	API for the MCM / other scripts:
+	  lewd_exe_toggles.list()            -> entries whose console command exists in this exe; each entry
+	                                        has .pending = true while a restart toggle waits for a restart
+	  lewd_exe_toggles.get(cmd)          -> current value (number) or nil
+	  lewd_exe_toggles.set(cmd, value)   -> runs the console command and saves the console config
+	                                        (cfg_save -> user.ltx), so it survives a restart. Returns
+	                                        ok, needs_restart (true for restart = true entries).
+	  lewd_exe_toggles.needs_restart(cmd)-> true when this toggle was changed this session and needs a restart
+	  lewd_exe_toggles.pending()         -> list of cmds waiting for a restart
+	  lewd_exe_toggles.reset_defaults()  -> sets every listed toggle back to its def (saved once)
+]]
+
+TOGGLES = {
+}
+
+local function cmd_exists(cmd)
+	return get_console_cmd(0, cmd) ~= nil
+end
+
+local function entry(cmd)
+	for _, t in ipairs(TOGGLES) do
+		if t.cmd == cmd then return t end
+	end
+end
+
+-- cmds changed this session whose entry says restart = true (cleared by the restart itself)
+local pending_restart = {}
+
+function list()
+	local out = {}
+	for _, t in ipairs(TOGGLES) do
+		if cmd_exists(t.cmd) then
+			t.pending = pending_restart[t.cmd] and true or false
+			out[#out + 1] = t
+		end
+	end
+	return out
+end
+
+function get(cmd)
+	if not cmd_exists(cmd) then return nil end
+	return tonumber(get_console_cmd(0, cmd))
+end
+
+local function write(cmd, value)
+	if not cmd_exists(cmd) then return false, false end
+	local old = get(cmd)
+	exec_console_cmd(cmd .. " " .. tostring(value))
+	local t = entry(cmd)
+	local restart = t and t.restart and true or false
+	if restart and old ~= get(cmd) then pending_restart[cmd] = true end
+	return true, restart
+end
+
+function set(cmd, value)
+	local ok, restart = write(cmd, value)
+	if ok then exec_console_cmd("cfg_save") end
+	return ok, restart
+end
+
+function needs_restart(cmd)
+	return pending_restart[cmd] == true
+end
+
+function pending()
+	local out = {}
+	for _, t in ipairs(TOGGLES) do
+		if pending_restart[t.cmd] then out[#out + 1] = t.cmd end
+	end
+	return out
+end
+
+function reset_defaults()
+	local any = false
+	for _, t in ipairs(list()) do
+		if write(t.cmd, t.def) then any = true end
+	end
+	if any then exec_console_cmd("cfg_save") end
+end
