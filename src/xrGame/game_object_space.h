@@ -100,6 +100,10 @@ namespace GameObject
         eNetSpawnAfter,
 #endif
 
+#ifdef CAR_NEW
+		eCarOnContact, // LEWD B2: CCar physics contact, dispatched from CCar::UpdateCL
+#endif
+
 		eDummy = u32(-1),
 	};
 };

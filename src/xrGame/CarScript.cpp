@@ -7,8 +7,13 @@
 using namespace luabind;
 
 #pragma optimize("s",on)
+void lewd_engine_feature_add(LPCSTR name); // script_ini_file_script.cpp
+
 void CCar::script_register(lua_State* L)
 {
+#ifdef CAR_NEW
+	lewd_engine_feature_add("car_contact"); // LEWD B2
+#endif
 	module(L)
 	[
 #ifdef CAR_NEW
@@ -93,6 +98,14 @@ void CCar::script_register(lua_State* L)
 		.def("VisualCamera_GetDesireAngle", &CCar::VisualCamera_GetDesireAngle)
 		.def("VisualCamera_GetRotXCur", &CCar::VisualCamera_GetRotXCur)
 		.def("VisualCamera_GetRotYCur", &CCar::VisualCamera_GetRotYCur)
+
+		// LEWD B2: contact callback (callback.car_on_contact), default off
+		.def("set_contact_callback_enabled", &CCar::set_contact_callback_enabled)
+		.def("get_contact_callback_enabled", &CCar::get_contact_callback_enabled)
+		.def("set_contact_callback_filter", &CCar::set_contact_callback_filter)
+		.def("set_contact_callback_max", &CCar::set_contact_callback_max)
+		.def("get_contact_callback_stats", &CCar::get_contact_callback_stats)
+		.def("reset_contact_callback_stats", &CCar::reset_contact_callback_stats)
 #endif
 		.def(constructor<>())
 	];

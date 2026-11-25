@@ -39,6 +39,9 @@ BONE_P_MAP CCar::bone_map = BONE_P_MAP();
 #ifdef CAR_NEW
 #include "script_game_object.h"
 #include "script_hit.h"
+#ifdef CAR_NEW
+#include "../xrphysics/ExtendedGeom.h" // LEWD B2
+#endif
 #endif
 
 CCar::CCar()
@@ -109,6 +112,15 @@ CCar::CCar()
 #endif
 
 #ifdef CAR_NEW
+	m_lewd_contact_enabled = false;
+	m_lewd_contact_hooked = false;
+	m_lewd_contact_wheels = false;
+	m_lewd_contact_static = true;
+	m_lewd_contact_min_impulse = 0.f;
+	m_lewd_contact_max = 8;
+	m_lewd_contact_processing = false;
+	ZeroMemory(&m_lewd_contact_stats, sizeof(m_lewd_contact_stats));
+
 	m_remote_control = false;
 
 	m_camera_bone_def = BI_NONE;
@@ -342,12 +354,30 @@ void CCar::SpawnInitPhysics(CSE_Abstract* D)
 	//PPhysicsShell()->add_ObjectContactCallback(ActorObstacleCallback);
 	SetDefaultNetState(so);
 	CPHUpdateObject::Activate();
+#ifdef CAR_NEW
+	m_lewd_contact_hooked = false; // new shell: hook again if Lua enabled it
+	LewdContactHook(m_lewd_contact_enabled);
+	if (m_lewd_contact_enabled && !m_lewd_contact_processing)
+	{
+		processing_activate();
+		m_lewd_contact_processing = true;
+	}
+#endif
 
 	m_pPhysicsShell->applyImpulse(Fvector().set(0.f, -1.f, 0.f), 0.1f);
 }
 
 void CCar::net_Destroy()
 {
+#ifdef CAR_NEW
+	m_lewd_contacts.clear();
+	m_lewd_contact_hooked = false; // the shell (and the geoms holding the hook) goes away
+	if (m_lewd_contact_processing)
+	{
+		processing_deactivate();
+		m_lewd_contact_processing = false;
+	}
+#endif
 #ifdef DEBUG
 	DBgClearPlots();
 #endif
@@ -576,6 +606,10 @@ void CCar::UpdateCL()
 			                     m_car_weapon->ViewCameraNorm());
 	}
 	ASCUpdate();
+#ifdef CAR_NEW
+	if (!m_lewd_contacts.empty())
+		LewdContactDispatch();
+#endif
 	if (Owner()) return;
 	//	UpdateEx			(g_fov);
 	VisualUpdate(90);
@@ -2440,3 +2474,214 @@ Fvector CCar::ExitPosition()
 	else m_exit_position.set(Position());
 	return m_exit_position;
 }
+
+// LEWD B2 console toggle "lewd_car_contact_cb": 1 = allowed when a script enables it, 0 = API is a no-op
+int g_lewd_car_contact_cb = 1;
+
+#ifdef CAR_NEW
+/*----------------------------------------------------------------------------------------------------
+    LEWD B2: contact callback
+----------------------------------------------------------------------------------------------------*/
+void CCar::set_contact_callback_enabled(bool v)
+{
+	if (v && !g_lewd_car_contact_cb)
+		return; // switched off in the exe options: stays disabled
+	m_lewd_contact_enabled = v;
+	if (!v) m_lewd_contacts.clear();
+	LewdContactHook(v);
+	// B2 fix: UpdateCL (the dispatcher) only runs while the car is processing, which the stock car
+	// only holds while driven by the actor or with the engine sound on. Hold one ref while enabled.
+	if (v != m_lewd_contact_processing)
+	{
+		if (v) processing_activate();
+		else processing_deactivate();
+		m_lewd_contact_processing = v;
+	}
+}
+
+void CCar::set_contact_callback_filter(float min_impulse, bool wheels, bool static_geom)
+{
+	m_lewd_contact_min_impulse = _valid(min_impulse) ? _max(min_impulse, 0.f) : 0.f;
+	m_lewd_contact_wheels = wheels;
+	m_lewd_contact_static = static_geom;
+}
+
+LPCSTR CCar::get_contact_callback_stats()
+{
+	static string512 buf;
+	const SLewdContactStats& s = m_lewd_contact_stats;
+	xr_sprintf(buf, "seen=%u own=%u wheel=%u static_off=%u below_min=%u queued=%u merged=%u dispatched=%u "
+	           "max_impulse=%.1f hooked=%d processing=%d", s.seen, s.own, s.wheel, s.static_off, s.below_min,
+	           s.queued, s.merged, s.dispatched, s.max_impulse, m_lewd_contact_hooked ? 1 : 0,
+	           m_lewd_contact_processing ? 1 : 0);
+	return buf;
+}
+
+void CCar::reset_contact_callback_stats()
+{
+	ZeroMemory(&m_lewd_contact_stats, sizeof(m_lewd_contact_stats));
+}
+
+void CCar::LewdContactHook(bool on)
+{
+	if (!m_pPhysicsShell || on == m_lewd_contact_hooked)
+		return;
+	if (on) m_pPhysicsShell->add_ObjectContactCallback(LewdContactCallback);
+	else m_pPhysicsShell->remove_ObjectContactCallback(LewdContactCallback);
+	m_lewd_contact_hooked = on;
+}
+
+// Runs inside the ODE collision pass: collect only, never touch Lua or game objects here.
+void CCar::LewdContactCallback(bool& do_colide, bool bo1, dContact& c, SGameMtl* material_1, SGameMtl* material_2)
+{
+	if (!do_colide)
+		return;
+	dGeomID g_self = bo1 ? c.geom.g1 : c.geom.g2;
+	dGeomID g_other = bo1 ? c.geom.g2 : c.geom.g1;
+	dxGeomUserData* ud_self = PHRetrieveGeomUserData(g_self);
+	if (!ud_self || !ud_self->ph_ref_object)
+		return;
+	CCar* car = smart_cast<CCar*>(ud_self->ph_ref_object);
+	if (!car || !car->m_lewd_contact_enabled)
+		return;
+
+	SLewdContactStats& st = car->m_lewd_contact_stats;
+	++st.seen;
+	dxGeomUserData* ud_other = PHRetrieveGeomUserData(g_other);
+	dBodyID b_self = dGeomGetBody(g_self);
+	dBodyID b_other = dGeomGetBody(g_other);
+
+	u16 other_id = u16(-1);
+	if (ud_other && ud_other->ph_ref_object)
+		other_id = ud_other->ph_ref_object->ObjectID();
+	if (other_id == car->ID())
+	{
+		++st.own;
+		return; // own elements
+	}
+	// B2 fix: "static" = level geometry only. A bodyless geom that belongs to a game object (unbroken
+	// CBreakableObject static form, static-form props) is an object contact, not static.
+	const bool is_static = (b_other == 0) && other_id == u16(-1);
+	if (is_static && !car->m_lewd_contact_static)
+	{
+		++st.static_off;
+		return;
+	}
+
+	const u16 self_bone = ud_self->bone_id;
+	if (!car->m_lewd_contact_wheels && car->m_wheels_map.find(self_bone) != car->m_wheels_map.end())
+	{
+		++st.wheel;
+		return;
+	}
+
+	// ODE normal points from g2 into g1: flip it so it pushes the car away from the other side
+	Fvector n;
+	n.set(float(c.geom.normal[0]), float(c.geom.normal[1]), float(c.geom.normal[2]));
+	if (!bo1) n.invert();
+
+	const dReal* cp = c.geom.pos;
+	dVector3 v_self = {0, 0, 0, 0}, v_other = {0, 0, 0, 0};
+	float m_self = 0.f, m_other = 0.f;
+	if (b_self)
+	{
+		dBodyGetPointVel(b_self, cp[0], cp[1], cp[2], v_self);
+		dMass m;
+		dBodyGetMass(b_self, &m);
+		m_self = float(m.mass);
+	}
+	if (b_other)
+	{
+		dBodyGetPointVel(b_other, cp[0], cp[1], cp[2], v_other);
+		dMass m;
+		dBodyGetMass(b_other, &m);
+		m_other = float(m.mass);
+	}
+	// closing speed: velocity of the car relative to the other, against the normal
+	const float speed = -float((v_self[0] - v_other[0]) * n.x + (v_self[1] - v_other[1]) * n.y +
+		(v_self[2] - v_other[2]) * n.z);
+	const float sp = speed > 0.f ? speed : 0.f;
+	float mu;
+	if (m_self > 0.f && m_other > 0.f) mu = m_self * m_other / (m_self + m_other);
+	else mu = m_self > 0.f ? m_self : m_other; // static (or fixed) other: the car element's mass
+	const float impulse = mu * sp;
+	if (impulse > st.max_impulse) st.max_impulse = impulse;
+	if (impulse < car->m_lewd_contact_min_impulse)
+	{
+		++st.below_min;
+		return;
+	}
+
+	SLewdContact rec;
+	rec.other_id = other_id;
+	rec.is_static = is_static;
+	rec.self_bone = self_bone;
+	rec.pos.set(float(cp[0]), float(cp[1]), float(cp[2]));
+	rec.normal.set(n);
+	rec.depth = float(c.geom.depth);
+	rec.speed = sp;
+	rec.impulse = impulse;
+	rec.energy = 0.5f * mu * sp * sp;
+	rec.other_mass = m_other;
+	rec.material = bo1 ? material_2 : material_1;
+
+	// merge: one record per other object (all static contacts share one), strongest impulse wins
+	xr_vector<SLewdContact>& q = car->m_lewd_contacts;
+	for (xr_vector<SLewdContact>::iterator it = q.begin(); it != q.end(); ++it)
+	{
+		if (it->other_id == rec.other_id && it->is_static == rec.is_static)
+		{
+			if (rec.impulse > it->impulse || (rec.impulse == it->impulse && rec.depth > it->depth))
+				*it = rec;
+			++st.merged;
+			return;
+		}
+	}
+	const u32 cap = 64; // hard cap per frame, whatever m_lewd_contact_max says
+	++st.queued;
+	if (q.size() < cap)
+	{
+		q.push_back(rec);
+		return;
+	}
+	xr_vector<SLewdContact>::iterator weakest = q.begin();
+	for (xr_vector<SLewdContact>::iterator it = q.begin(); it != q.end(); ++it)
+		if (it->impulse < weakest->impulse) weakest = it;
+	if (rec.impulse > weakest->impulse)
+		*weakest = rec;
+}
+
+void CCar::LewdContactDispatch()
+{
+	// swap out first: a Lua handler may enable/disable the callback or trigger physics
+	xr_vector<SLewdContact> q;
+	q.swap(m_lewd_contacts);
+	if (!m_lewd_contact_enabled)
+		return;
+	if (!g_lewd_car_contact_cb)
+	{
+		set_contact_callback_enabled(false); // switched off at runtime: unhook, release processing
+		return;
+	}
+	std::sort(q.begin(), q.end(), [](const SLewdContact& a, const SLewdContact& b) { return a.impulse > b.impulse; });
+	const u32 n = _min(u32(q.size()), m_lewd_contact_max);
+	for (u32 i = 0; i < n; ++i)
+	{
+		const SLewdContact& r = q[i];
+		CScriptGameObject* other = nullptr;
+		if (r.other_id != u16(-1))
+		{
+			CObject* O = Level().Objects.net_Find(r.other_id);
+			CGameObject* GO = O ? smart_cast<CGameObject*>(O) : nullptr;
+			if (GO && !GO->getDestroy())
+				other = GO->lua_game_object();
+		}
+		LPCSTR mtl = (r.material && r.material->m_Name.size()) ? r.material->m_Name.c_str() : "";
+		++m_lewd_contact_stats.dispatched;
+		callback(GameObject::eCarOnContact)(lua_game_object(), other, r.pos, r.normal, r.depth, r.impulse,
+		                                    r.speed, mtl, r.self_bone, r.is_static, r.energy, r.other_mass);
+		if (getDestroy() || !m_lewd_contact_enabled)
+			break;
+	}
+}
+#endif

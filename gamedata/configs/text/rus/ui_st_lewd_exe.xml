@@ -5,4 +5,10 @@
 	<string id="ui_st_lewd_exe">
 		<text>Exe</text>
 	</string>
+	<string id="ui_st_lewd_exe_car_contact_cb">
+		<text>Vehicle contact callbacks (lewd_car_contact_cb)</text>
+	</string>
+	<string id="ui_st_lewd_exe_car_contact_cb_desc">
+		<text>Lets scripts get a callback when a vehicle hits something (callback.car_on_contact). Off: the script call does nothing.</text>
+	</string>
 </string_table>

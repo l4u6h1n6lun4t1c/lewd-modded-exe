@@ -174,6 +174,9 @@ void CScriptGameObject::script_register(lua_State* L)
 #endif
 			//-AVO
 			value("on_foot_step", int(GameObject::eOnFootStep)),
+#ifdef CAR_NEW
+			value("car_on_contact", int(GameObject::eCarOnContact)), // LEWD B2
+#endif
 
 			value("map_location_added", int(GameObject::eMapLocationAdded))
 		],

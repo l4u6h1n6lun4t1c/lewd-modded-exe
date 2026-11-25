@@ -768,6 +768,52 @@ public:
     void ScopeOnMouseWheel(int direction);
 
 /*----------------------------------------------------------------------------------------------------
+    LEWD B2: contact callback (callback.car_on_contact)
+    Contacts are only collected inside the ODE collision callback (no Lua there); CCar::UpdateCL
+    dispatches them once per frame, merged per other object (strongest impulse kept).
+----------------------------------------------------------------------------------------------------*/
+private:
+    struct SLewdContact
+    {
+        u16 other_id;        // u16(-1) = static geometry or an object without a game object
+        bool is_static;      // other geom has no body (level geometry)
+        u16 self_bone;
+        Fvector pos;         // world
+        Fvector normal;      // world, pushes the car away from the other
+        float depth;
+        float speed;         // closing speed along the normal at the contact point, m/s
+        float impulse;       // speed * reduced mass, kg*m/s
+        float energy;        // 0.5 * reduced mass * speed^2, J
+        float other_mass;    // other body's mass, 0 = no body (static / static-form object)
+        SGameMtl* material;  // other side's material
+    };
+    struct SLewdContactStats
+    {
+        u32 seen, own, wheel, static_off, below_min, queued, merged, dispatched;
+        float max_impulse;   // strongest impulse seen, before the min_impulse filter
+    };
+    SLewdContactStats m_lewd_contact_stats;
+    bool m_lewd_contact_processing; // holds a processing_activate() so UpdateCL keeps running
+    xr_vector<SLewdContact> m_lewd_contacts;
+    bool m_lewd_contact_enabled;
+    bool m_lewd_contact_hooked;
+    bool m_lewd_contact_wheels;
+    bool m_lewd_contact_static;
+    float m_lewd_contact_min_impulse;
+    u32 m_lewd_contact_max;
+    static void LewdContactCallback(bool& do_colide, bool bo1, dContact& c, SGameMtl* material_1, SGameMtl* material_2);
+    void LewdContactHook(bool on);
+    void LewdContactDispatch();
+
+public:
+    void set_contact_callback_enabled(bool v);
+    bool get_contact_callback_enabled() { return m_lewd_contact_enabled; }
+    void set_contact_callback_filter(float min_impulse, bool wheels, bool static_geom);
+    void set_contact_callback_max(u32 n) { m_lewd_contact_max = n ? n : 1; }
+    LPCSTR get_contact_callback_stats();
+    void reset_contact_callback_stats();
+
+/*----------------------------------------------------------------------------------------------------
     CCarDrone
 ----------------------------------------------------------------------------------------------------*/
 private:

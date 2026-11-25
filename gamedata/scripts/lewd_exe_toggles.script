@@ -24,6 +24,8 @@
 ]]
 
 TOGGLES = {
+	-- B2: 1 = car_on_contact works once a script enables it, 0 = set_contact_callback_enabled is a no-op
+	{ cmd = "lewd_car_contact_cb", def = 1, restart = false, feature = "car_contact", text = "ui_st_lewd_exe_car_contact_cb" },
 }
 
 local function cmd_exists(cmd)
