@@ -15,6 +15,10 @@ on:
         description: Publish a release
         default: false
         type: boolean
+      staging:
+        description: As a pre-release (staging). Only "Test builds" installs get it until you set it as latest.
+        default: true
+        type: boolean
   workflow_call:
     inputs:
       ref:
@@ -23,6 +27,9 @@ on:
       release:
         type: boolean
         default: false
+      staging:
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -217,6 +224,7 @@ jobs:
       if: inputs.release
       env:
         GH_TOKEN: ${{ github.token }}
+        STAGING: ${{ inputs.staging }}
       run: |
         set -euo pipefail
         cat > notes.md <<EOF
@@ -226,5 +234,11 @@ jobs:
 
         Patches since upstream: https://github.com/$GITHUB_REPOSITORY/compare/$UPSTREAM_TAG...$SHA
         EOF
-        gh release create "$BUILD" out/* -R "$GITHUB_REPOSITORY" --target "$SHA" \
+        if [ "$STAGING" = "true" ]; then
+          printf '\n**Staging build.** Only installs with "Test builds" on get it. To publish it to everyone, edit this release, untick "Set as a pre-release" and tick "Set as the latest release".\n' >> notes.md
+          flag=--prerelease
+        else
+          flag=--latest
+        fi
+        gh release create "$BUILD" out/* -R "$GITHUB_REPOSITORY" --target "$SHA" $flag \
           --title "LEWD Modded Exes $BUILD" --notes-file notes.md

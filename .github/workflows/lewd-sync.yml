@@ -101,4 +101,5 @@ jobs:
     with:
       ref: ${{ needs.sync.outputs.sha }}
       release: true
+      staging: true
     secrets: inherit

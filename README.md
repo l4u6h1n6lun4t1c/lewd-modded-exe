@@ -17,6 +17,7 @@ When upstream merges one, the next rebase drops our copy by itself.
 
 - **LEWD upstream sync** runs every 6 hours. When upstream publishes a new release, it rebases `lewd` onto it, builds and publishes `<upstream tag>-lewd.<n>`.
   If our patches conflict, it opens an issue instead, and players keep the previous build.
+- New builds go out as **pre-releases** (staging). Players' updaters ignore them; the LEWD Addon Manager with "Test builds" on installs them. After testing, edit the release: untick "Set as a pre-release", tick "Set as the latest release", and everyone gets it.
 - **LEWD build** can be run by hand on any ref. With *release* ticked it publishes a release, for example after adding a patch to `lewd`.
 
 Each release has `lewd-modded-exes_<version>.zip` (`bin/` exes, `db/mods/` gamedata, license) and `lewd-exes.json` (version, upstream tag, SHA-256 of every file). The LEWD MO2 plugin reads the manifest.
