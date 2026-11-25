@@ -1,0 +1,193 @@
+--[[
+	lewd_veh_hooks.script - safe wrappers for the LEWD vehicle physics engine hooks
+	(B1 collision filters, B2 car contact callback, B6 centre of mass / mass).
+
+	Copy this file into your mod. On a stock exe every wrapper does nothing and returns
+	false/nil, so the mod keeps running; on a LEWD exe it calls the real engine methods.
+
+	Feature detection, in this order:
+	  1. the global lewd_engine_features() (LEWD Modded Exes only) -> { collision_filters = true,
+	     mass_center = true, car_contact = true, camera_occlusion_fade = true, ... }
+	  2. method / enum existence (works for a single cherry-picked hook too)
+	The exe switches lewd_car_contact_cb / lewd_camera_cull (lewd_exe_toggles.script, LEWD MCM Exe section)
+	can turn B2 / B12 into no-ops even when the feature exists.
+]]
+
+local features_cache
+
+local function features()
+	if features_cache then return features_cache end
+	features_cache = {}
+	local f = rawget(_G, "lewd_engine_features")
+	if type(f) == "function" then
+		local ok, t = pcall(f)
+		if ok and type(t) == "table" then
+			for name, on in pairs(t) do if on then features_cache[name] = true end end
+		end
+	end
+	return features_cache
+end
+
+-- true when the luabind object has a method of that name (unknown members index to nil or error)
+local function has_method(obj, name)
+	if not obj then return false end
+	local ok, m = pcall(function() return obj[name] end)
+	return ok and m ~= nil
+end
+
+local function shell_of(obj_or_shell)
+	if not obj_or_shell then return nil end
+	if has_method(obj_or_shell, "get_physics_shell") then
+		return obj_or_shell:get_physics_shell()
+	end
+	return obj_or_shell
+end
+
+----------------------------------------------------------------------------------------------
+-- detection
+----------------------------------------------------------------------------------------------
+-- shell is optional; without it only lewd_engine_features() is asked
+function has_collision_filters(shell)
+	if features().collision_filters then return true end
+	return shell ~= nil and has_method(shell_of(shell), "set_ignore_small")
+end
+
+function has_mass_center(shell)
+	if features().mass_center then return true end
+	return shell ~= nil and has_method(shell_of(shell), "set_mass_center")
+end
+
+function has_car_contact()
+	if features().car_contact then return true end
+	local ok, v = pcall(function() return callback.car_on_contact end)
+	return ok and v ~= nil
+end
+
+----------------------------------------------------------------------------------------------
+-- B1 collision filters. obj = game object or physics_shell. Returns true when applied.
+----------------------------------------------------------------------------------------------
+local function set_filter(obj, method, v)
+	local sh = shell_of(obj)
+	if not (sh and has_method(sh, method)) then return false end
+	sh[method](sh, v and true or false)
+	return true
+end
+
+function set_small(obj, v)            return set_filter(obj, "set_small", v) end
+function set_ignore_small(obj, v)     return set_filter(obj, "set_ignore_small", v) end
+function set_ignore_static(obj, v)    return set_filter(obj, "set_ignore_static", v) end
+function set_ignore_dynamic(obj, v)   return set_filter(obj, "set_ignore_dynamic", v) end
+function set_ignore_character(obj, v) return set_filter(obj, "set_ignore_character", v) end
+function set_ragdoll(obj, v)          return set_filter(obj, "set_ragdoll", v) end
+function set_ignore_ragdoll(obj, v)   return set_filter(obj, "set_ignore_ragdoll", v) end
+function set_animated_class(obj, v)   return set_filter(obj, "set_animated_class", v) end
+function set_ignore_animated(obj, v)  return set_filter(obj, "set_ignore_animated", v) end
+
+-- vehicle ignores "small" shells (debris) for sec seconds, then collides with them again.
+-- Needs a running game; uses CreateTimeEvent (Anomaly _g).
+function ignore_small_for(obj, sec)
+	if not set_ignore_small(obj, true) then return false end
+	local id = obj.id and obj:id()
+	if not id then return true end
+	CreateTimeEvent("lewd_veh_hooks_small", tostring(id), sec or 3, function(oid)
+		local o = level.object_by_id(oid)
+		if o then set_ignore_small(o, false) end
+		return true
+	end, id)
+	return true
+end
+
+----------------------------------------------------------------------------------------------
+-- B6 centre of mass / mass (root element, root bone space)
+----------------------------------------------------------------------------------------------
+function get_mass_center(obj)
+	local sh = shell_of(obj)
+	if not (sh and has_method(sh, "get_mass_center")) then return nil end
+	return sh:get_mass_center()
+end
+
+function set_mass_center(obj, v)
+	local sh = shell_of(obj)
+	if not (sh and v and has_method(sh, "set_mass_center")) then return false end
+	return sh:set_mass_center(v)
+end
+
+-- move the centre of mass by an offset (root bone space), e.g. vector():set(0,-0.3,0)
+function shift_mass_center(obj, offset)
+	local c = get_mass_center(obj)
+	if not (c and offset) then return false end
+	return set_mass_center(obj, vector():set(c.x + offset.x, c.y + offset.y, c.z + offset.z))
+end
+
+function set_mass(obj, m)
+	local sh = shell_of(obj)
+	if not (sh and m and has_method(sh, "set_mass")) then return false end
+	sh:set_mass(m)
+	return true
+end
+
+----------------------------------------------------------------------------------------------
+-- B2 car contact callback
+-- fn(car, other_or_nil, pos, normal, depth, impulse, speed, material, bone_id, is_static, energy, other_mass)
+-- opts = { min_impulse = 0, wheels = false, static_geom = true, max = 8 }
+----------------------------------------------------------------------------------------------
+function set_car_contact_callback(obj, fn, owner, opts)
+	if not (obj and has_car_contact()) then return false end
+	local car = obj.get_car and obj:get_car()
+	if not (car and has_method(car, "set_contact_callback_enabled")) then return false end
+	if fn then
+		opts = opts or {}
+		car:set_contact_callback_filter(opts.min_impulse or 0, opts.wheels and true or false,
+			opts.static_geom ~= false)
+		car:set_contact_callback_max(opts.max or 8)
+		if owner then
+			obj:set_callback(callback.car_on_contact, fn, owner)
+		else
+			obj:set_callback(callback.car_on_contact, fn)
+		end
+		car:set_contact_callback_enabled(true)
+	else
+		car:set_contact_callback_enabled(false)
+		obj:set_callback(callback.car_on_contact, nil)
+	end
+	return true
+end
+
+----------------------------------------------------------------------------------------------
+-- B12 camera occlusion fade (render-only, this client only)
+-- target = game object, object id or world vector; radius in m (default 1.25)
+-- opts = { static_radius_max = 0, dynamic = true, target_clear = 1.5 }
+----------------------------------------------------------------------------------------------
+function has_camera_occlusion_fade()
+	if features().camera_occlusion_fade then return true end
+	return level.set_camera_occlusion_fade ~= nil
+end
+
+function set_camera_occlusion_fade(target, radius, opts)
+	if not has_camera_occlusion_fade() then return false end
+	if opts and level.set_camera_occlusion_options then
+		level.set_camera_occlusion_options(opts.static_radius_max or 0, opts.dynamic ~= false, opts.target_clear or 1.5)
+	end
+	local r = radius or 1.25
+	if type(target) == "number" then
+		level.set_camera_occlusion_fade(true, target, r)
+	elseif type(target) == "userdata" and has_method(target, "id") then
+		level.set_camera_occlusion_fade(true, target:id(), r)
+	elseif target then
+		level.set_camera_occlusion_fade(true, target, r)
+	else
+		return false
+	end
+	return true
+end
+
+function clear_camera_occlusion_fade()
+	if level.clear_camera_occlusion_fade then level.clear_camera_occlusion_fade() return true end
+	return false
+end
+
+-- B2 debug counters string (nil on exes without them)
+function car_contact_stats(obj)
+	local car = obj and obj.get_car and obj:get_car()
+	if car and has_method(car, "get_contact_callback_stats") then return car:get_contact_callback_stats() end
+end
