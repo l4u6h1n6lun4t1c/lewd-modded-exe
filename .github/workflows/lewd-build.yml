@@ -208,7 +208,7 @@ jobs:
             "commit": os.environ["SHA"],
             "zip": f"lewd-modded-exes_{os.environ['BUILD']}.zip",
             "files": files,
-            "min_plugin_version": "1.0.0",
+            "min_addon_manager": "0.4.0",
         }
         (pkg / "lewd-exes.json").write_text(json.dumps(manifest, indent=2))
         pathlib.Path("out/lewd-exes.json").write_text(json.dumps(manifest, indent=2))
