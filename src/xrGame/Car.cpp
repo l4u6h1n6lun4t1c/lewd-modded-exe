@@ -1616,6 +1616,10 @@ void CCar::TransmissionDown()
 
 void CCar::PhTune(float step)
 {
+	// LEWD: runs on the physics thread from the update-object list; a car whose shell is already gone
+	// (half-destroyed or failed spawn) must not touch it (AV 0x48 in a 819-object AW bench, 2026-11-26)
+	if (!PPhysicsShell())
+		return;
 #ifdef CAR_NEW
     if (m_car_drone)
     {
@@ -2017,6 +2021,8 @@ void CCar::ResetScriptData(void* P)
 
 void CCar::PhDataUpdate(float step)
 {
+	if (!PPhysicsShell()) // LEWD: see PhTune
+		return;
 #ifdef CAR_NEW
     if (m_car_drone)
     {

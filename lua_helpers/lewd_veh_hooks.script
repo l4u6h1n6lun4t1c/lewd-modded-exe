@@ -23,6 +23,8 @@ local function features()
 		local ok, t = pcall(f)
 		if ok and type(t) == "table" then
 			for name, on in pairs(t) do if on then features_cache[name] = true end end
+		elseif ok and type(t) == "string" then -- older LEWD test exes returned "a,b,c"
+			for name in string.gmatch(t, "[^,]+") do features_cache[name] = true end
 		end
 	end
 	return features_cache
