@@ -8,3 +8,4 @@ Engine changes asked for by LEWD threads. Not started unless marked.
 | `lewd_engine_features()` | LEWD MODDING | Planned | One Lua query for all projects, returns a table of feature flags. Each feature commit adds its flag. |
 | PBR renderer, bodycam, Monolith hand IK | LEWD MODDING | Planned | Port onto `lewd` as separate commits, off by default where possible, toggled from the LEWD MCM Exe section. |
 | B2 contact callbacks, B12 camera cull | LEWD MODDING | Planned | Toggles in the MCM Exe section. |
+| 12-layer terrain blend | Tarkov level port | Approved by the user (2026-11-26), not started | MicroSplat-style terrain like Tarkov: bind 2-3 blend masks and 12 detail layers (or a texture array) instead of 1 mask + 4 details. Tarkov level port thread writes the HLSL; this fork adds the C++ renderer binding (terrain shader resources, level/material config to name the extra textures). DX11. |
