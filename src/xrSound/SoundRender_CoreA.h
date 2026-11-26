@@ -91,6 +91,12 @@ public:
 
 	virtual void _initialize(int stage);
 	virtual void _clear();
+	virtual void lewd_frame_end();
+	// LEWD AUTOTEST game-clock capture: loopback device + WAV writer
+	bool lewd_loopback = false;
+	FILE* lewd_wav = nullptr;
+	void* lewd_render = nullptr;      // LPALCRENDERSAMPLESSOFT
+	void lewd_wav_close();
 	virtual void _restart();
 	virtual void refresh_devices() override;
 	virtual void default_device_changed() override;

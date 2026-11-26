@@ -14,6 +14,7 @@
 #include "../xrRender/HW.h"
 #include "../../xrEngine/XR_IOConsole.h"
 #include "../../Include/xrAPI/xrAPI.h"
+#include "../../xrCore/lewd_autotest.h"
 #include "../xrRender/xrRender_console.h"
 
 #include "StateManager\dx10SamplerStateCache.h"
@@ -332,7 +333,7 @@ void CHW::CreateDevice(HWND hwnd, bool move_window)
     // TODO: DX10: Create appropriate initialization
 
     // General - select adapter and device
-    BOOL bWindowed = (g_screenmode != 2);
+    BOOL bWindowed = (g_screenmode != 2) || lewd_autotest();
 
     m_DriverType = Caps.bForceGPU_REF ? D3D_DRIVER_TYPE_REFERENCE : D3D_DRIVER_TYPE_HARDWARE;
 
@@ -789,7 +790,7 @@ void CHW::Reset(HWND hwnd)
     DXGI_SWAP_CHAIN_DESC& cd = m_ChainDesc;
 #endif
 
-    BOOL bWindowed = (g_screenmode != 2);
+    BOOL bWindowed = (g_screenmode != 2) || lewd_autotest();
 
 #if defined(USE_DX11)
     cd_fs.Windowed = bWindowed;
@@ -959,7 +960,12 @@ void CHW::selectResolution(u32& dwWidth, u32& dwHeight, BOOL bWindowed)
     if (psCurrentVidMode[0] == 0 || psCurrentVidMode[1] == 0)
         GetMonitorResolution(psCurrentVidMode[0], psCurrentVidMode[1]);
 
-	if (g_screenmode == 0)
+	if (lewd_autotest()) // LEWD AUTOTEST: exactly vid_mode, whatever the window ended up as
+	{
+		dwWidth = psCurrentVidMode[0];
+		dwHeight = psCurrentVidMode[1];
+	}
+	else if (g_screenmode == 0)
 	{
 		RECT clientRect;
 		GetClientRect(Device.m_hWnd, &clientRect);
@@ -1184,6 +1190,20 @@ BOOL CHW::support(D3DFORMAT fmt, DWORD type, DWORD usage)
 
 void CHW::updateWindowProps(HWND m_hWnd)
 {
+    // LEWD AUTOTEST: borderless window of the chosen resolution, parked off-screen, never activated,
+    // cursor left alone
+    if (lewd_autotest())
+    {
+        if (psCurrentVidMode[0] == 0 || psCurrentVidMode[1] == 0)
+            GetMonitorResolution(psCurrentVidMode[0], psCurrentVidMode[1]);
+        int x, y;
+        lewd_autotest_window_pos(x, y);
+        SetWindowLong(m_hWnd, GWL_STYLE, WS_POPUP);
+        SetWindowPos(m_hWnd, HWND_BOTTOM, x, y, psCurrentVidMode[0], psCurrentVidMode[1],
+                     SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOCOPYBITS | SWP_FRAMECHANGED);
+        return;
+    }
+
 	//	BOOL	bWindowed				= strstr(Core.Params,"-dedicated") ? TRUE : !psDeviceFlags.is	(rsFullscreen);
     BOOL bWindowed = (g_screenmode != 2);
 

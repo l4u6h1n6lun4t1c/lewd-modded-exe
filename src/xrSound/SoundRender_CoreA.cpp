@@ -9,6 +9,8 @@
 #include "../xrEngine/XR_IOConsole.h"
 
 #include <AL/efx.h>
+#include <AL/alext.h>
+#include "../xrCore/lewd_autotest.h"
 
 BOOL reverb_overwrite = FALSE;
 
@@ -391,8 +393,42 @@ void CSoundRender_CoreA::_initialize(int stage)
 	}
 	R_ASSERT2(pDeviceDesc, make_string("Sound device not found: %s", snd_device_name.c_str()));
 	const ALDeviceDesc& deviceDesc = *pDeviceDesc;
-	// OpenAL device
-	pDevice = alcOpenDevice(deviceDesc.name_al);
+	// OpenAL device. LEWD AUTOTEST: a loopback device that renders 33 ms per game frame into game_audio.wav
+	// (sound on the game clock, nothing on the speakers); falls back to the normal device if unavailable
+	pDevice = nullptr;
+	if (lewd_autotest() && lewd_autotest_audio_capture())
+	{
+		auto openLoop = (LPALCLOOPBACKOPENDEVICESOFT)alcGetProcAddress(nullptr, "alcLoopbackOpenDeviceSOFT");
+		lewd_render = (void*)alcGetProcAddress(nullptr, "alcRenderSamplesSOFT");
+		char dir[MAX_PATH];
+		lewd_autotest_work_dir(dir, sizeof(dir));
+		if (openLoop && lewd_render && dir[0])
+		{
+			pDevice = openLoop(nullptr);
+			if (pDevice)
+			{
+				lewd_loopback = true;
+				char wav[MAX_PATH];
+				xr_sprintf(wav, "%s\\game_audio.wav", dir);
+				lewd_wav = fopen(wav, "wb");
+				if (lewd_wav)
+				{
+					// 16-bit stereo PCM; sizes are filled in on close (autotest.py also repairs them after a crash)
+					const unsigned rate = lewd_autotest_audio_rate, byterate = rate * 4;
+					const unsigned short ch = 2, bits = 16, align = 4, pcm = 1;
+					const unsigned zero = 0, fmtlen = 16;
+					fwrite("RIFF", 1, 4, lewd_wav); fwrite(&zero, 4, 1, lewd_wav); fwrite("WAVEfmt ", 1, 8, lewd_wav);
+					fwrite(&fmtlen, 4, 1, lewd_wav); fwrite(&pcm, 2, 1, lewd_wav); fwrite(&ch, 2, 1, lewd_wav);
+					fwrite(&rate, 4, 1, lewd_wav); fwrite(&byterate, 4, 1, lewd_wav); fwrite(&align, 2, 1, lewd_wav);
+					fwrite(&bits, 2, 1, lewd_wav); fwrite("data", 1, 4, lewd_wav); fwrite(&zero, 4, 1, lewd_wav);
+					g_lewd_audio_samples = 0;
+				}
+				Msg("LEWD AUTOTEST: game-clock sound (loopback) -> %s", wav);
+			}
+		}
+	}
+	if (!pDevice)
+		pDevice = alcOpenDevice(deviceDesc.name_al);
 	if (pDevice == nullptr)
 	{
 		CHECK_OR_EXIT(0, "SOUND: OpenAL: Failed to create device.");
@@ -404,8 +440,15 @@ void CSoundRender_CoreA::_initialize(int stage)
 	const ALCchar* deviceSpecifier;
 	deviceSpecifier = alcGetString(pDevice, ALC_DEVICE_SPECIFIER);
 
-	// Create context
-	pContext = alcCreateContext(pDevice, NULL);
+	// Create context (the loopback device needs its output format here)
+	if (lewd_loopback)
+	{
+		const ALCint attrs[] = { ALC_FORMAT_CHANNELS_SOFT, ALC_STEREO_SOFT, ALC_FORMAT_TYPE_SOFT, ALC_SHORT_SOFT,
+			ALC_FREQUENCY, lewd_autotest_audio_rate, 0 };
+		pContext = alcCreateContext(pDevice, attrs);
+	}
+	else
+		pContext = alcCreateContext(pDevice, NULL);
 	if (pContext == nullptr) {
 		CHECK_OR_EXIT(0, "SOUND: OpenAL: Failed to create context.");
 		bPresent = FALSE;
@@ -426,7 +469,9 @@ void CSoundRender_CoreA::_initialize(int stage)
 	A_CHK(alListener3f (AL_VELOCITY,0.f,0.f,0.f));
 	Fvector orient[2] = {{0.f, 0.f, 1.f}, {0.f, 1.f, 0.f}};
 	A_CHK(alListenerfv (AL_ORIENTATION,&orient[0].x));
-	A_CHK(alListenerf (AL_GAIN,1.f));
+	// LEWD autotest: silent for the user. With audio capture the output is a WAV file (wave backend), so full
+	// gain; without it the listener is muted (gain 0, sound system still runs)
+	A_CHK(alListenerf (AL_GAIN,(lewd_autotest() && !lewd_autotest_audio_capture()) ? 0.f : 1.f));
 
 	// Check for EFX extension
 
@@ -512,12 +557,39 @@ void CSoundRender_CoreA::set_master_volume(float f)
 {
 	if (bPresent)
 	{
-		A_CHK(alListenerf (AL_GAIN,f));
+		A_CHK(alListenerf (AL_GAIN,(lewd_autotest() && !lewd_autotest_audio_capture()) ? 0.f : f));
 	}
+}
+
+// LEWD AUTOTEST: one game frame (33 ms) of sound into the WAV
+void CSoundRender_CoreA::lewd_frame_end()
+{
+	if (!lewd_loopback || !lewd_wav || !lewd_render || !pDevice)
+		return;
+	static short buf[lewd_autotest_audio_rate / 10 * 2];
+	const int n = lewd_autotest_audio_rate * 33 / 1000;     // 1584 frames = the fixed game step
+	((LPALCRENDERSAMPLESSOFT)lewd_render)(pDevice, buf, n);
+	fwrite(buf, sizeof(short) * 2, n, lewd_wav);
+	g_lewd_audio_samples += n;
+}
+
+void CSoundRender_CoreA::lewd_wav_close()
+{
+	if (!lewd_wav)
+		return;
+	const long end = ftell(lewd_wav);
+	const unsigned riff = unsigned(end - 8), data = unsigned(end - 44);
+	fseek(lewd_wav, 4, SEEK_SET);
+	fwrite(&riff, 4, 1, lewd_wav);
+	fseek(lewd_wav, 40, SEEK_SET);
+	fwrite(&data, 4, 1, lewd_wav);
+	fclose(lewd_wav);
+	lewd_wav = nullptr;
 }
 
 void CSoundRender_CoreA::_clear()
 {
+	lewd_wav_close();
 	inherited::_clear();
 	// remove targets
 	CSoundRender_Target* T = nullptr;

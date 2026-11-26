@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "resource.h"
 #include "dedicated_server_only.h"
+#include "../xrCore/lewd_autotest.h"
 
 #ifdef INGAME_EDITOR
 # include "../include/editor/ide.hpp"
@@ -70,7 +71,8 @@ PROTECT_API void CRenderDevice::Initialize()
 		AdjustWindowRect(&rc, m_dwWindowStyle, FALSE);
 
 		// Create the render window
-		m_hWnd = CreateWindowEx(WS_EX_TOPMOST,
+		// LEWD AUTOTEST: no topmost, never activates, no taskbar button
+		m_hWnd = CreateWindowEx(lewd_autotest() ? (WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW) : WS_EX_TOPMOST,
 		                        wndclass, "S.T.A.L.K.E.R.: Anomaly", m_dwWindowStyle,
 		                        /*rc.left, rc.top, */CW_USEDEFAULT, CW_USEDEFAULT,
 		                        (rc.right - rc.left), (rc.bottom - rc.top), 0L,

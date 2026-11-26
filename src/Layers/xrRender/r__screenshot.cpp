@@ -4,6 +4,7 @@
 #include "dxRenderDeviceRender.h"
 #include "../xrRender/tga.h"
 #include "../../xrEngine/xrImage_Resampler.h"
+#include "../../xrCore/lewd_autotest.h"
 
 #if defined(USE_DX10) || defined(USE_DX11)
 #include "d3dx10tex.h"
@@ -167,6 +168,34 @@ void CRender::ScreenshotImpl(ScreenshotMode mode, LPCSTR name, CMemoryWriter* me
 		break;
 	case IRender_interface::SM_NORMAL:
 		{
+			// LEWD AUTOTEST: a named screenshot goes exactly to that absolute path, format from its extension
+			if (lewd_autotest() && name && *name)
+			{
+				LPCSTR ext = strext(name);
+				const bool jpg = ext && (!stricmp(ext, ".jpg") || !stricmp(ext, ".jpeg"));
+				ID3DBlob* saved = 0;
+#ifdef USE_DX11
+				HRESULT hr = D3DX11SaveTextureToMemory(HW.pContext, pSrcTexture, jpg ? D3DX11_IFF_JPG : D3DX11_IFF_PNG, &saved, 0);
+#else
+				HRESULT hr = D3DX10SaveTextureToMemory(pSrcTexture, jpg ? D3DX10_IFF_JPG : D3DX10_IFF_PNG, &saved, 0);
+#endif
+				if (SUCCEEDED(hr) && saved)
+				{
+					IWriter* fs = FS.w_open(name);
+					if (fs)
+					{
+						fs->w(saved->GetBufferPointer(), (u32)saved->GetBufferSize());
+						FS.w_close(fs);
+					}
+					else
+						Msg("! [LEWD AUTOTEST] cannot write screenshot [%s]", name);
+				}
+				else
+					Msg("! [LEWD AUTOTEST] screenshot encode failed [%s] hr=0x%08x", name, hr);
+				_RELEASE(saved);
+				break;
+			}
+
 			string64 t_stemp;
 			string_path buf;
 			xr_sprintf(buf, sizeof(buf), "ss_%s_%s_(%s).%s", Core.UserName, timestamp(t_stemp),

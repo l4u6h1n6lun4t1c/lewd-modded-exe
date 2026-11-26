@@ -8,8 +8,10 @@
 
 #include "pch_script.h"
 #include "../xrEngine/LightAnimLibrary.h"
+#include "HUDManager.h"
 #include "level.h"
 #include "actor.h"
+#include "../xrCore/lewd_autotest.h"
 #include "script_game_object.h"
 #include "patrol_path_storage.h"
 #include "xrServer.h"
@@ -2668,6 +2670,40 @@ bool TopInputReceiver()
 	return CurrentGameUI() && CurrentGameUI()->TopInputReceiver();
 }
 
+// LEWD AUTOTEST
+extern ENGINE_API void lewd_autotest_queue_shot(LPCSTR path);
+extern ENGINE_API void lewd_autotest_record(LPCSTR dir);
+extern ENGINE_API u32 lewd_autotest_record_frame();
+extern ENGINE_API void lewd_autotest_set_fps(float fps);
+extern ENGINE_API void lewd_autotest_record_ext(LPCSTR ext);
+static void lat_set_fps(float fps) { if (lewd_autotest()) lewd_autotest_set_fps(fps); }
+static void lat_record_ext(LPCSTR ext) { if (lewd_autotest()) lewd_autotest_record_ext(ext); }
+static void lat_show_ui(bool on) { if (lewd_autotest()) HUD().SetRenderable(on); }
+void lewd_engine_feature_add(LPCSTR name); // script_ini_file_script.cpp
+static bool lat_enabled() { return lewd_autotest(); }
+static LPCSTR lat_command_line() { return Core.Params; }
+static void lat_shot(LPCSTR path) { if (lewd_autotest()) lewd_autotest_queue_shot(path); }
+static void lat_record_start(LPCSTR dir) { if (lewd_autotest()) lewd_autotest_record(dir); }
+static void lat_record_stop() { if (lewd_autotest()) lewd_autotest_record(""); }
+static u32 lat_record_frame() { return lewd_autotest_record_frame(); }
+static void lat_flush_log() { FlushLog(); }
+// scope power from script: +n = n x ZoomInc, -n = n x ZoomDec on the actor's active weapon (must be aimed);
+// the zoom keys are the mouse wheel, which level.press_action cannot send. Returns the zoom factor after.
+static float lat_zoom(int steps)
+{
+	if (!lewd_autotest() || !Actor())
+		return 0.f;
+	CWeapon* w = smart_cast<CWeapon*>(Actor()->inventory().ActiveItem());
+	if (!w)
+		return 0.f;
+	for (int i = 0; i < abs(steps); ++i)
+	{
+		if (steps > 0) w->ZoomInc();
+		else w->ZoomDec();
+	}
+	return w->GetZoomFactor();
+}
+
 #pragma optimize("s",on)
 
 extern void open_originals_link();
@@ -3360,5 +3396,22 @@ void CLevel::script_register(lua_State* L)
 		def("update_pda_news_from_uiwindow", &update_pda_news_from_uiwindow),
 
         def("get_actor_alcohol", &GetActorAlcohol)
+	];
+
+	// LEWD AUTOTEST: unattended smoke tests (all no-ops without -lewd_autotest)
+	lewd_engine_feature_add("autotest_hooks"); // LEWD AUTOTEST: hooks compiled in (they act only with -lewd_autotest)
+	module(L, "lewd_autotest")
+	[
+		def("enabled", &lat_enabled),
+		def("command_line", &lat_command_line),
+		def("shot", &lat_shot),
+		def("record_start", &lat_record_start),
+		def("record_stop", &lat_record_stop),
+		def("record_frame", &lat_record_frame),
+		def("flush_log", &lat_flush_log),
+		def("zoom", &lat_zoom),
+		def("set_fps", &lat_set_fps),
+		def("record_ext", &lat_record_ext),
+		def("show_ui", &lat_show_ui)
 	];
 }

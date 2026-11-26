@@ -5,6 +5,7 @@
 //#include "xr_effgamma.h"
 #include "render.h"
 #include "dedicated_server_only.h"
+#include "../xrCore/lewd_autotest.h"
 #include "../xrcdb/xrxrc.h"
 
 //#include "securom_api.h"
@@ -193,8 +194,18 @@ PROTECT_API void CRenderDevice::Create()
 		style = WS_POPUP;
 	}
 
+	if (lewd_autotest()) // LEWD AUTOTEST: borderless, off-screen, never activated
+	{
+		lewd_autotest_window_pos(monX, monY);
+		SetWindowLongPtr(m_hWnd, GWL_STYLE, WS_POPUP);
+		SetWindowPos(m_hWnd, HWND_BOTTOM, monX, monY, psCurrentVidMode[0], psCurrentVidMode[1],
+		             SWP_FRAMECHANGED | SWP_NOACTIVATE);
+	}
+	else
+	{
 	SetWindowLongPtr(m_hWnd, GWL_STYLE, style);
 	SetWindowPos(m_hWnd, HWND_TOP, monX, monY, w, h, SWP_FRAMECHANGED);
+	}
 
 	Statistic = xr_new<CStats>();
 #ifdef DEBUG

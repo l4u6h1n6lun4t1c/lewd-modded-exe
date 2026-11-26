@@ -3,6 +3,7 @@
 #include "xr_ioconsole.h"
 #include "xr_input.h"
 #include "../xrCore/profiler.h"
+#include "../xrCore/lewd_autotest.h"
 
 #pragma warning(disable:4995)
 // mmsystem.h
@@ -99,6 +100,86 @@ void CRenderDevice::Clear()
 	m_pRender->Clear();
 }
 
+// LEWD AUTOTEST: frame captures, taken from the finished frame right before Present.
+// shot: one picture at an absolute path (.png or .jpg). record: every frame into a folder as
+// 000000.jpg, 000001.jpg ... for a video (run with rs_constant_fps so game time per frame is fixed).
+static xr_vector<xr_string> s_lewd_shots;
+static xr_string s_lewd_record_dir;
+static u32 s_lewd_record_frame = 0;
+static xr_string s_lewd_record_ext = "jpg";
+// fixed game time per frame in test mode (ms); 0 = real time (benchmark pass). LEWD video: 60 fps
+static float s_lewd_step_ms = 33.f;
+static double s_lewd_time_ms = 0.0;
+
+ENGINE_API void lewd_autotest_set_fps(float fps) { s_lewd_step_ms = fps > 0.f ? 1000.f / fps : 0.f; }
+ENGINE_API void lewd_autotest_record_ext(LPCSTR ext) { s_lewd_record_ext = (ext && *ext) ? ext : "jpg"; }
+
+ENGINE_API void lewd_autotest_queue_shot(LPCSTR path)
+{
+	if (path && *path)
+		s_lewd_shots.push_back(path);
+}
+
+// times.txt in the record folder: "<frame> <wall ms>" per captured frame, so the video can be cut to the wall
+// clock of game_audio.wav (the game runs a fixed 33 ms per frame, the WAV writer runs in real time)
+static FILE* s_lewd_record_times = nullptr;
+
+ENGINE_API void lewd_autotest_record(LPCSTR dir)
+{
+	if (s_lewd_record_times)
+	{
+		fclose(s_lewd_record_times);
+		s_lewd_record_times = nullptr;
+	}
+	s_lewd_record_dir = dir ? dir : "";
+	s_lewd_record_frame = 0;
+	if (!s_lewd_record_dir.empty())
+	{
+		// the folder may not exist yet (the screenshot code makes it on the first frame): make it now, every level
+		string_path p;
+		xr_strcpy(p, s_lewd_record_dir.c_str());
+		for (char* c = p; *c; ++c)
+		{
+			if ((*c == '\\' || *c == '/') && c > p && *(c - 1) != ':')
+			{
+				const char keep = *c;
+				*c = 0;
+				CreateDirectoryA(p, nullptr);
+				*c = keep;
+			}
+		}
+		CreateDirectoryA(p, nullptr);
+		xr_sprintf(p, "%s\\times.txt", s_lewd_record_dir.c_str());
+		s_lewd_record_times = fopen(p, "w");
+		if (s_lewd_record_times && g_lewd_audio_samples >= 0)
+			fprintf(s_lewd_record_times, "# audio_samples %lld rate %d\n", (long long)g_lewd_audio_samples,
+				lewd_autotest_audio_rate);
+		if (!s_lewd_record_times)
+			Msg("! LEWD AUTOTEST: cannot write %s (video will have no sound)", p);
+	}
+}
+
+ENGINE_API u32 lewd_autotest_record_frame()
+{
+	return s_lewd_record_frame;
+}
+
+static void lewd_autotest_capture()
+{
+	for (const xr_string& p : s_lewd_shots)
+		::Render->Screenshot(IRender_interface::SM_NORMAL, p.c_str());
+	s_lewd_shots.clear();
+
+	if (!s_lewd_record_dir.empty())
+	{
+		string_path p;
+		if (s_lewd_record_times)
+			fprintf(s_lewd_record_times, "%u %.3f\n", s_lewd_record_frame, lewd_autotest_wall_ms());
+		xr_sprintf(p, "%s\\%06u.%s", s_lewd_record_dir.c_str(), s_lewd_record_frame++, s_lewd_record_ext.c_str());
+		::Render->Screenshot(IRender_interface::SM_NORMAL, p);
+	}
+}
+
 
 void CRenderDevice::End(void)
 {
@@ -148,6 +229,8 @@ void CRenderDevice::End(void)
 	// Present goes here, so call OA Frame end.
 	if (g_SASH.IsBenchmarkRunning())
 		g_SASH.DisplayFrame(Device.fTimeGlobal);
+	if (lewd_autotest())
+		lewd_autotest_capture(); // before Present: a flip-model back buffer is undefined afterwards
 	m_pRender->End();
 
 # ifdef INGAME_EDITOR
@@ -663,11 +746,14 @@ void CRenderDevice::Run()
 	mt_bMustExit = FALSE;
 	thread_spawn(mt_FreezeThread, "Freeze detecting thread", 0, 0);
 	thread_spawn(mt_Thread, "X-RAY Secondary thread", 0, this);
-	thread_spawn(mt_DiscordThread, "X-RAY Discord thread", 0, 0);
+	// LEWD AUTOTEST: no Discord presence; its thread teardown is the lead for the heap corruption at quit (2026-10-11)
+	if (!lewd_autotest())
+		thread_spawn(mt_DiscordThread, "X-RAY Discord thread", 0, 0);
 	// Message cycle
 	seqAppStart.Process(rp_AppStart);
 	m_pRender->ClearTarget();
-	SetForegroundWindow(m_hWnd);
+	if (!lewd_autotest()) SetForegroundWindow(m_hWnd);
+	else b_is_Active = TRUE; // the window never gets WM_ACTIVATE, so it would never render
 	message_loop();
 	seqAppEnd.Process(rp_AppEnd);
 	// Stop Balance-Thread
@@ -691,9 +777,30 @@ void CRenderDevice::FrameMove()
 	dwFrame++;
 	Core.dwFrame = dwFrame;
 	dwTimeContinual = TimerMM.GetElapsed_ms() - app_inactive_time;
-	if (psDeviceFlags.test(rsConstantFPS))
+	// LEWD AUTOTEST: fixed 33 ms per frame, so every run reaches the same pose on the same frame and a
+	// frame capture plays back as real-time 30 fps video however slow the capture was
+	if (psDeviceFlags.test(rsConstantFPS) || (lewd_autotest() && s_lewd_step_ms > 0.f))
 	{
 		PROF_EVENT("Constant FPS");
+
+		// LEWD AUTOTEST: never run faster than real time. Sound plays on the wall clock; with game time racing
+		// ahead a 7.9 s reload took 6 s of real time and its sound drifted ~1-2 s behind the picture. Frames that
+		// take longer than 33 ms still fall behind (nothing to do there), but on a normal frame the clocks agree.
+		if (lewd_autotest())
+		{
+			static double s_next = 0.0;
+			double now = lewd_autotest_wall_ms();
+			if (s_next > now && s_next - now < 200.0)
+			{
+				const double left = s_next - now;
+				if (left > 2.0)
+					Sleep(DWORD(left - 1.5));
+				while (lewd_autotest_wall_ms() < s_next)
+					;
+				now = s_next;
+			}
+			s_next = now + (s_lewd_step_ms > 0.f ? s_lewd_step_ms : 33.0);
+		}
 
 		// 20ms = 50fps
 		//fTimeDelta = 0.020f;
@@ -701,10 +808,23 @@ void CRenderDevice::FrameMove()
 		//dwTimeDelta = 20;
 		//dwTimeGlobal += 20;
 		// 33ms = 30fps
-		fTimeDelta = 0.033f;
-		fTimeGlobal += 0.033f;
-		dwTimeDelta = 33;
-		dwTimeGlobal += 33;
+		if (lewd_autotest())
+		{
+			// LEWD AUTOTEST: configurable step (AT.set_fps); the integer ms clock follows the float one
+			const u32 before = u32(s_lewd_time_ms);
+			s_lewd_time_ms += s_lewd_step_ms;
+			fTimeDelta = s_lewd_step_ms * 0.001f;
+			fTimeGlobal += fTimeDelta;
+			dwTimeDelta = u32(s_lewd_time_ms) - before;
+			dwTimeGlobal += dwTimeDelta;
+		}
+		else
+		{
+			fTimeDelta = 0.033f;
+			fTimeGlobal += 0.033f;
+			dwTimeDelta = 33;
+			dwTimeGlobal += 33;
+		}
 	}
 	else
 	{
@@ -824,6 +944,13 @@ void CRenderDevice::OnWM_Activate(WPARAM wParam, LPARAM lParam)
 	u16 fActive = LOWORD(wParam);
 	BOOL fMinimized = (BOOL)HIWORD(wParam);
 	BOOL bActive = ((fActive != WA_INACTIVE) && (!fMinimized)) ? TRUE : FALSE;
+
+	// LEWD AUTOTEST: always active, never touches the cursor
+	if (lewd_autotest())
+	{
+		Device.b_is_Active = TRUE;
+		return;
+	}
 
 	if (psDeviceFlags2.test(rsAlwaysActive) && g_screenmode != 2)
 	{

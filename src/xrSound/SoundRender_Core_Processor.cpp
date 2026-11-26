@@ -158,6 +158,7 @@ void CSoundRender_Core::update(const Fvector& P, const Fvector& D, const Fvector
 	// Events
 	update_events();
 
+	lewd_frame_end();
 	bLocked = FALSE;
 }
 

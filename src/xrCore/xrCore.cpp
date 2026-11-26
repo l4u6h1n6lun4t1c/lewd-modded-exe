@@ -242,3 +242,6 @@ BOOL DllMainXrCore(HANDLE hinstDLL, DWORD ul_reason_for_call, LPVOID lpvReserved
 	return TRUE;
 }
 #endif // XRCORE_STATIC
+
+// LEWD AUTOTEST: game-clock audio capture position (see lewd_autotest.h)
+XRCORE_API volatile __int64 g_lewd_audio_samples = -1;

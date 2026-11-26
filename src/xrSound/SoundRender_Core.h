@@ -99,6 +99,7 @@ public:
 
 	// listener
 	virtual void update_listener(const Fvector& P, const Fvector& D, const Fvector& N, float dt)=0;
+	virtual void lewd_frame_end() {}   // LEWD AUTOTEST: game-clock audio capture renders one frame here
 	
 	//  EFX listener
 	virtual void set_listener(const CSoundRender_Environment& env)=0;

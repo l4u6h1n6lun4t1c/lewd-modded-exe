@@ -11,6 +11,7 @@
 
 #include "dedicated_server_only.h"
 #include "no_single.h"
+#include "../xrCore/lewd_autotest.h"
 #include "../xrNetServer/NET_AuthCheck.h"
 
 #include "xr_input.h"
@@ -269,9 +270,55 @@ void destroyInput()
 	xr_delete(pInput);
 }
 
+// LEWD AUTOTEST: render the game's sound into <work dir>\game_audio.wav (OpenAL Soft "wave" backend, set through
+// an ALSOFT_CONF file) instead of the speakers: the test stays silent for the user and the videos get sound.
+// Music is 0 in user_autotest.ltx. game_audio_t0.txt = wall-clock ms when the mixer started.
+static void lewd_autotest_audio_setup()
+{
+	char dir[MAX_PATH];
+	lewd_autotest_work_dir(dir, sizeof(dir));
+	if (!dir[0])
+		return;
+	char conf[MAX_PATH], wav[MAX_PATH];
+	xr_sprintf(conf, "%s\\alsoft_autotest.conf", dir);
+	xr_sprintf(wav, "%s\\game_audio.wav", dir);
+	DeleteFileA(wav);
+	FILE* f = fopen(conf, "w");
+	if (!f)
+		return;
+	fprintf(f, "[general]\ndrivers = wave\n[wave]\nfile = %s\n", wav);
+	fclose(f);
+	SetEnvironmentVariableA("ALSOFT_CONF", conf);
+	_putenv_s("ALSOFT_CONF", conf);
+	SetEnvironmentVariableA("LEWD_AUTOTEST_AUDIO", "1");
+	_putenv_s("LEWD_AUTOTEST_AUDIO", "1");
+	Msg("LEWD AUTOTEST: sound goes to %s", wav);
+}
+
+static void lewd_autotest_audio_mark()
+{
+	char dir[MAX_PATH];
+	lewd_autotest_work_dir(dir, sizeof(dir));
+	if (!dir[0] || !lewd_autotest_audio_capture())
+		return;
+	char p[MAX_PATH];
+	xr_sprintf(p, "%s\\game_audio_t0.txt", dir);
+	if (FILE* f = fopen(p, "w"))
+	{
+		fprintf(f, "%.3f\n", lewd_autotest_wall_ms());
+		fclose(f);
+	}
+}
+
 PROTECT_API void InitSound1()
 {
+	if (lewd_autotest())
+		lewd_autotest_audio_setup();
 	CSound_manager_interface::_create(0);
+	// the WAV writer starts with the OpenAL context created here: mark its wall time now (InitSound2 runs after
+	// execUserScript, 100-200 ms later, which put every clip's sound that much late)
+	if (lewd_autotest())
+		lewd_autotest_audio_mark();
 }
 
 PROTECT_API void InitSound2()
@@ -607,6 +654,12 @@ void Startup()
 
 	ResetStartupMonitor();
 #endif
+
+	// LEWD AUTOTEST: plain monolith has no immediate log mode; bench scripts call lewd_autotest.flush_log()
+	if (lewd_autotest())
+	{
+		Msg("* [LEWD AUTOTEST] test mode on: %s", Core.Params);
+	}
 
 	// ...command line for auto start
 	{
@@ -1052,7 +1105,7 @@ int APIENTRY WinMain_impl(HINSTANCE hInstance,
 		y,
 		splashW,
 		splashH,
-		SWP_SHOWWINDOW
+		lewd_autotest() ? (SWP_HIDEWINDOW | SWP_NOACTIVATE) : SWP_SHOWWINDOW // LEWD AUTOTEST: no splash
 	);
 	
 	UpdateWindow(logoWindow);
