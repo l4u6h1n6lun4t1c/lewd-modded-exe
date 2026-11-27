@@ -118,6 +118,10 @@ jobs:
         buildconf: ["DX11", "DX11-AVX"]
     steps:
     - name: Configure pagefile
+      # Extra headroom for the linker. On 2026-11-27 this action failed on the runner itself
+      # ("SetPageFileSize ... The operation completed successfully"), which killed both builds.
+      # The build ran fine without it before, so a failure here must not stop the build.
+      continue-on-error: true
       uses: al-cheb/configure-pagefile-action@v1.3
       with:
         minimum-size: 8GB
