@@ -484,11 +484,20 @@ void CUIHudStatesWnd::SetAmmoIcon(const shared_str& sect_name)
 	else
 		m_ui_weapon_icon->SetShader(InventoryUtilities::GetEquipmentIconsShader());
 
-	float h = texture_rect.height() * 0.8f;
-	float w = texture_rect.width() * 0.8f;
+	// LEWD: an HD icon (demonized's inv_grid_scale convention) carries an
+	// icon N times the item's inventory footprint, so inv_grid_width/height
+	// are N times the cells it takes. The inventory is scripted and divides
+	// by it; this window is not, so an HD round drew its icon N times too
+	// big here. The texture rect is untouched: that IS N cells of texture.
+	float grid_scale = READ_IF_EXISTS(pSettings, r_float, sect_name, "inv_grid_scale", 1.0f);
+	if (grid_scale < 1.0f)
+		grid_scale = 1.0f;
+
+	float h = (texture_rect.height() / grid_scale) * 0.8f;
+	float w = (texture_rect.width() / grid_scale) * 0.8f;
 
 	// now perform only width scale for ammo, which (W)size >2
-	if (texture_rect.width() > 2.01f * INV_GRID_WIDTH)
+	if (texture_rect.width() / grid_scale > 2.01f * INV_GRID_WIDTH)
 		w = INV_GRID_WIDTH * 1.5f;
 
 	m_ui_weapon_icon->SetWidth(w * UI().get_current_kx());
